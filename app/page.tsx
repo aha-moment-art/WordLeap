@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { wordBanks, type WordEntry } from "./word-bank";
 
 type Mode = "meaning" | "cloze";
 type Stage = "setup" | "quiz" | "result";
@@ -8,24 +9,23 @@ type Provider = "deepseek" | "kimi" | "gemini";
 type Question = { word: string; phonetic: string; sentence?: string; options: string[]; answer: number; example: string };
 type WordStats = Record<string, { right: number; wrong: number; lastSeen: number }>;
 
-const questions = {
-  meaning: [
-    { word: "abandon", phonetic: "/əˈbændən/", options: ["获得", "放弃", "建立", "避免"], answer: 1, example: "They had to abandon the car in the snow." },
-    { word: "vital", phonetic: "/ˈvaɪtl/", options: ["微小的", "古老的", "至关重要的", "自愿的"], answer: 2, example: "Regular exercise is vital for good health." },
-    { word: "reluctant", phonetic: "/rɪˈlʌktənt/", options: ["不情愿的", "可靠的", "相关的", "放松的"], answer: 0, example: "She was reluctant to admit her mistake." },
-    { word: "derive", phonetic: "/dɪˈraɪv/", options: ["描述", "减少", "推迟", "获得；源自"], answer: 3, example: "Many English words derive from Latin." },
-    { word: "inevitable", phonetic: "/ɪnˈevɪtəbl/", options: ["看不见的", "不可避免的", "不合适的", "不准确的"], answer: 1, example: "Some changes are simply inevitable." },
-  ],
-  cloze: [
-    { word: "abandon", phonetic: "/əˈbændən/", sentence: "He had to _____ the plan because it was too expensive.", options: ["abandon", "achieve", "protect", "improve"], answer: 0, example: "They had to abandon the car in the snow." },
-    { word: "vital", phonetic: "/ˈvaɪtl/", sentence: "Clear communication is _____ to the success of any team.", options: ["vital", "rural", "formal", "equal"], answer: 0, example: "Regular exercise is vital for good health." },
-    { word: "reluctant", phonetic: "/rɪˈlʌktənt/", sentence: "Tom was _____ to speak in front of the large audience.", options: ["eager", "reluctant", "likely", "ready"], answer: 1, example: "She was reluctant to admit her mistake." },
-    { word: "derive", phonetic: "/dɪˈraɪv/", sentence: "The word 'planet' _____ from an ancient Greek term.", options: ["protects", "prevents", "derives", "delivers"], answer: 2, example: "Many English words derive from Latin." },
-    { word: "inevitable", phonetic: "/ɪnˈevɪtəbl/", sentence: "With such rapid growth, change seems _____.", options: ["inevitable", "invisible", "individual", "informal"], answer: 0, example: "Some changes are simply inevitable." },
-  ],
-};
-
 const letters = ["A", "B", "C", "D"];
+
+function shuffle<T>(items:T[]) {
+  const copy=[...items];
+  for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]];}
+  return copy;
+}
+
+function toQuestions(entries:WordEntry[], bank:WordEntry[], mode:Mode):Question[] {
+  return entries.map(entry=>{
+    const distractors=shuffle(bank.filter(item=>item.word!==entry.word)).slice(0,3);
+    const correct=mode==="meaning"?entry.meaning:entry.word;
+    const options=shuffle([correct,...distractors.map(item=>mode==="meaning"?item.meaning:item.word)]);
+    const pattern=new RegExp(`\\b${entry.word.replace(/[.*+?^${}()|[\\]\\]/g,"\\$&")}\\b`,"i");
+    return {word:entry.word,phonetic:entry.phonetic,meaning:entry.meaning,sentence:entry.example.replace(pattern,"_____"),options,answer:options.indexOf(correct),example:entry.example};
+  });
+}
 
 async function generateOnGitHubPages(provider: Provider, key: string, payload: {library:string;mode:Mode;count:number;weakWords:string[]}) {
   const prompt = `Create ${payload.count} ${payload.library} English vocabulary multiple-choice questions. Mode: ${payload.mode === "cloze" ? "sentence cloze with four English word options" : "English word with four Chinese meaning options"}. ${payload.weakWords.length ? `Prioritize these weak words: ${payload.weakWords.join(", ")}.` : "Use representative exam vocabulary."} Return valid JSON only as {"questions":[{"word":"","phonetic":"IPA","sentence":"required for cloze only","options":["","","",""],"answer":0,"example":"short natural English example"}]}. answer is zero-based. Exactly four distinct options.`;
@@ -61,7 +61,7 @@ export default function Home() {
   const [generating, setGenerating] = useState(false);
   const [apiStatus, setApiStatus] = useState("");
   const [wordStats, setWordStats] = useState<WordStats>({});
-  const [activeSet, setActiveSet] = useState<Question[]>(questions.meaning);
+  const [activeSet, setActiveSet] = useState<Question[]>(()=>toQuestions(wordBanks["CET-4"].slice(0,10),wordBanks["CET-4"],"meaning"));
 
   useEffect(() => {
     try {
@@ -81,12 +81,20 @@ export default function Home() {
   const dueToday = useMemo(() => 12 + saved.length, [saved.length]);
 
   async function startQuiz() {
-    let nextSet: Question[] = [...questions[mode]];
-    if (adaptive) nextSet.sort((a,b) => {
+    const bank=wordBanks[library];
+    let candidates=[...bank];
+    if(scope==="错题本") candidates=candidates.filter(item=>(wordStats[item.word]?.wrong||0)>0);
+    if(scope==="复习词") candidates=candidates.filter(item=>(wordStats[item.word]?.lastSeen||0)>0);
+    if(scope==="收藏词") candidates=candidates.filter(item=>saved.includes(item.word));
+    if(scope==="新词学习") candidates.sort((a,b)=>(wordStats[a.word]?.lastSeen||0)-(wordStats[b.word]?.lastSeen||0));
+    if(!candidates.length) candidates=[...bank];
+    if (adaptive) candidates.sort((a,b) => {
       const sa = wordStats[a.word] || {right:0,wrong:0,lastSeen:0};
       const sb = wordStats[b.word] || {right:0,wrong:0,lastSeen:0};
       return (sb.wrong * 3 - sb.right) - (sa.wrong * 3 - sa.right) || sa.lastSeen - sb.lastSeen;
     });
+    else candidates=shuffle(candidates);
+    let nextSet: Question[] = toQuestions(candidates.slice(0,count),bank,mode);
     if (apiKey.trim()) {
       setGenerating(true); setApiStatus("AI 正在根据你的学习情况出题…");
       try {
@@ -94,7 +102,7 @@ export default function Home() {
         let data;
         if (window.location.hostname.endsWith("github.io")) data=await generateOnGitHubPages(provider,apiKey.trim(),payload);
         else { const response = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey.trim()}`}, body:JSON.stringify({provider,...payload}) }); data=await response.json(); if (!response.ok) throw new Error(data.error || "生成失败"); }
-        if (Array.isArray(data.questions) && data.questions.length) nextSet = data.questions;
+        if (Array.isArray(data.questions) && data.questions.length) nextSet = [...data.questions,...nextSet.filter(q=>!data.questions.some((ai:Question)=>ai.word===q.word))].slice(0,count);
         setApiStatus("✓ 已生成专属智能题组");
       } catch (error) { setApiStatus(`未能生成新题，已使用内置题组：${error instanceof Error ? error.message : "请检查 Key"}`); }
       setGenerating(false);
@@ -159,7 +167,7 @@ export default function Home() {
 
         <div className="step"><div className="stepTitle"><span>01</span><div><h2>选择词库</h2><p>你想挑战哪个考试？</p></div></div>
           <div className="libraryGrid">
-            {[["CET-4","英语四级","4,500","大学英语基础"],["CET-6","英语六级","6,000","进阶核心词汇"],["IELTS","雅思","7,500","留学高频词汇"],["TOEFL","托福","8,000","学术场景词汇"]].map(([id,name,num,desc]) => <button key={id} className={`libCard ${library===id?"chosen":""}`} onClick={()=>setLibrary(id)}><span className={`examIcon ${id.toLowerCase()}`}>{id === "IELTS" ? "I" : id === "TOEFL" ? "T" : id.slice(-1)}</span><div><b>{name}</b><small>{desc}</small></div><span className="wordCount">{num}<small>词</small></span>{library===id&&<i>✓</i>}</button>)}
+            {[["CET-4","英语四级","大学英语基础"],["CET-6","英语六级","进阶核心词汇"],["IELTS","雅思","留学高频词汇"],["TOEFL","托福","学术场景词汇"]].map(([id,name,desc]) => <button key={id} className={`libCard ${library===id?"chosen":""}`} onClick={()=>setLibrary(id)}><span className={`examIcon ${id.toLowerCase()}`}>{id === "IELTS" ? "I" : id === "TOEFL" ? "T" : id.slice(-1)}</span><div><b>{name}</b><small>{desc}</small></div><span className="wordCount">{wordBanks[id].length}<small>内置词</small></span>{library===id&&<i>✓</i>}</button>)}
           </div>
         </div>
 
