@@ -10,7 +10,7 @@ type Question = { word: string; phonetic: string; sentence?: string; options: st
 type WordStats = Record<string, { right: number; wrong: number; lastSeen: number }>;
 
 const letters = ["A", "B", "C", "D"];
-const bankCounts:Record<string,number>={"CET-4":3846,"CET-6":5406,"IELTS":5040,"TOEFL":6974};
+const bankCounts:Record<string,number>={"CET-4":3846,"CET-6":5406,"IELTS":5040,"TOEFL":6974,"TEM-4":6000,"TEM-8":11191,"PTE":4657};
 const bankCache=new Map<string,WordEntry[]>();
 
 async function loadFullBank(library:string) {
@@ -99,7 +99,7 @@ export default function Home() {
     setGenerating(true); setApiStatus("正在载入完整词库…");
     let bank:WordEntry[];
     try { bank=await loadFullBank(library); setApiStatus(`✓ 已载入 ${bank.length.toLocaleString()} 个词`); }
-    catch { bank=wordBanks[library]; setApiStatus("完整词库暂时无法载入，已使用精选词库"); }
+    catch { bank=wordBanks[library]||wordBanks[library==="TEM-4"?"CET-6":library==="TEM-8"?"TOEFL":"IELTS"]; setApiStatus("完整词库暂时无法载入，已使用精选词库"); }
     let candidates=[...bank];
     if(scope==="错题本") candidates=candidates.filter(item=>(wordStats[item.word]?.wrong||0)>0);
     if(scope==="复习词") candidates=candidates.filter(item=>(wordStats[item.word]?.lastSeen||0)>0);
@@ -185,7 +185,7 @@ export default function Home() {
 
         <div className="step"><div className="stepTitle"><span>01</span><div><h2>选择词库</h2><p>你想挑战哪个考试？</p></div></div>
           <div className="libraryGrid">
-            {[["CET-4","英语四级","大学英语基础"],["CET-6","英语六级","进阶核心词汇"],["IELTS","雅思","留学高频词汇"],["TOEFL","托福","学术场景词汇"]].map(([id,name,desc]) => <button key={id} className={`libCard ${library===id?"chosen":""}`} onClick={()=>setLibrary(id)}><span className={`examIcon ${id.toLowerCase()}`}>{id === "IELTS" ? "I" : id === "TOEFL" ? "T" : id.slice(-1)}</span><div><b>{name}</b><small>{desc}</small></div><span className="wordCount">{bankCounts[id].toLocaleString()}<small>完整词库</small></span>{library===id&&<i>✓</i>}</button>)}
+            {[["CET-4","英语四级","大学英语基础"],["CET-6","英语六级","进阶核心词汇"],["TEM-4","英语专四","专业阶段核心"],["TEM-8","英语专八","专业阶段进阶"],["IELTS","雅思","留学高频词汇"],["TOEFL","托福","学术场景词汇"],["PTE","PTE","培生学术英语"]].map(([id,name,desc]) => <button key={id} className={`libCard ${library===id?"chosen":""}`} onClick={()=>setLibrary(id)}><span className={`examIcon ${id.toLowerCase()}`}>{id === "IELTS" ? "I" : id === "TOEFL" ? "T" : id === "PTE" ? "P" : id.slice(-1)}</span><div><b>{name}</b><small>{desc}</small></div><span className="wordCount">{bankCounts[id].toLocaleString()}<small>核心词库</small></span>{library===id&&<i>✓</i>}</button>)}
           </div>
         </div>
 
