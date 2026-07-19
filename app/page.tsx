@@ -6,7 +6,7 @@ import { wordBanks, type WordEntry } from "./word-bank";
 type Mode = "meaning" | "cloze";
 type Stage = "setup" | "quiz" | "result";
 type Provider = "deepseek" | "kimi" | "gemini";
-type Question = { word: string; phonetic: string; sentence?: string; options: string[]; answer: number; example: string };
+type Question = { word: string; phonetic: string; sentence?: string; options: string[]; answer: number; example: string; exampleSourceId?: number; exampleSourceUser?: string };
 type WordStats = Record<string, { right: number; wrong: number; lastSeen: number }>;
 
 const letters = ["A", "B", "C", "D"];
@@ -37,8 +37,8 @@ function toQuestions(entries:WordEntry[], bank:WordEntry[], mode:Mode):Question[
     const correct=mode==="meaning"?entry.meaning:entry.word;
     const options=shuffle([correct,...distractors.map(item=>mode==="meaning"?item.meaning:item.word)]);
     const pattern=new RegExp(`\\b${entry.word.replace(/[.*+?^${}()|[\\]\\]/g,"\\$&")}\\b`,"i");
-    const example=entry.example||((entry.pos||"").startsWith("v")?`In this exercise, you need to _____ correctly.`:(entry.pos||"").startsWith("a")?`The passage describes the result as _____.`:`The article discusses _____ in this section.`);
-    return {word:entry.word,phonetic:entry.phonetic,sentence:entry.example?entry.example.replace(pattern,"_____"):example,options,answer:options.indexOf(correct),example:entry.example||`${entry.word}: ${entry.meaning}`};
+    const sentence=entry.example?.replace(pattern,"_____");
+    return {word:entry.word,phonetic:entry.phonetic,sentence,options,answer:options.indexOf(correct),example:entry.example||`${entry.word}: ${entry.meaning}`,exampleSourceId:entry.exampleSourceId,exampleSourceUser:entry.exampleSourceUser};
   });
 }
 
@@ -106,6 +106,8 @@ export default function Home() {
     if(scope==="收藏词") candidates=candidates.filter(item=>saved.includes(item.word));
     if(scope==="新词学习") candidates.sort((a,b)=>(wordStats[a.word]?.lastSeen||0)-(wordStats[b.word]?.lastSeen||0));
     if(!candidates.length) candidates=[...bank];
+    if(mode==="cloze") candidates=candidates.filter(item=>item.example);
+    if(!candidates.length) { setGenerating(false); setApiStatus("该词库暂时没有可用的真实例句"); return; }
     if (adaptive) candidates.sort((a,b) => {
       const sa = wordStats[a.word] || {right:0,wrong:0,lastSeen:0};
       const sb = wordStats[b.word] || {right:0,wrong:0,lastSeen:0};
@@ -113,7 +115,7 @@ export default function Home() {
     });
     else candidates=shuffle(candidates);
     let nextSet: Question[] = toQuestions(candidates.slice(0,count),bank,mode);
-    if (apiKey.trim()) {
+    if (apiKey.trim() && mode!=="cloze") {
       setApiStatus("AI 正在根据你的学习情况出题…");
       try {
         const payload={library,mode,count:Math.min(count,10),weakWords:Object.entries(wordStats).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)};
@@ -123,7 +125,7 @@ export default function Home() {
         if (Array.isArray(data.questions) && data.questions.length) nextSet = [...data.questions,...nextSet.filter(q=>!data.questions.some((ai:Question)=>ai.word===q.word))].slice(0,count);
         setApiStatus("✓ 已生成专属智能题组");
       } catch (error) { setApiStatus(`未能生成新题，已使用内置题组：${error instanceof Error ? error.message : "请检查 Key"}`); }
-    }
+    } else if (mode==="cloze") setApiStatus("✓ 使用 Tatoeba 校对例句，已按学习记录自适应选题");
     setGenerating(false);
     setActiveSet(nextSet);
     setIndex(0); setSelected(null); setCorrect(0); setStreak(0); setMistakes([]); setStage("quiz");
@@ -207,7 +209,7 @@ export default function Home() {
           <div className="questionLabel">{mode === "meaning" ? "选择正确的中文释义" : "选择最适合填入空格的单词"}</div>
           {mode === "meaning" ? <div className="wordDisplay"><h1>{current.word}</h1><button aria-label="播放发音" onClick={speak}>🔊</button></div> : <h2 className="sentence">{current.sentence}</h2>}
           <div className="options">{current.options.map((option,i)=>{const state=selected===null?"":i===current.answer?"right":i===selected?"wrong":"dim";return <button key={option} className={state} onClick={()=>choose(i)}><span>{letters[i]}</span><b>{option}</b>{selected!==null&&i===current.answer&&<i>✓</i>}{selected===i&&i!==current.answer&&<i>×</i>}</button>})}</div>
-          {selected !== null && <div className={`feedback ${selected===current.answer?"success":"error"}`}><div className="feedbackHead"><span>{selected===current.answer?"✓":"×"}</span><div><b>{selected===current.answer?"回答正确！":"再想一想"}</b><small>{selected===current.answer?"做得很好，继续保持。":`正确答案是 ${letters[current.answer]}. ${current.options[current.answer]}`}</small></div></div><div className="wordInfo"><div><b>{current.word}</b> <span>{current.phonetic}</span><button onClick={speak}>🔊</button></div><p>{current.example}</p></div><div className="feedbackActions"><button className={saved.includes(current.word)?"saved":""} onClick={toggleSave}>{saved.includes(current.word)?"★ 已收藏":"☆ 加入收藏"}</button><button className="next" onClick={next}>{index+1>=total?"查看结果":"下一题"} →</button></div></div>}
+          {selected !== null && <div className={`feedback ${selected===current.answer?"success":"error"}`}><div className="feedbackHead"><span>{selected===current.answer?"✓":"×"}</span><div><b>{selected===current.answer?"回答正确！":"再想一想"}</b><small>{selected===current.answer?"做得很好，继续保持。":`正确答案是 ${letters[current.answer]}. ${current.options[current.answer]}`}</small></div></div><div className="wordInfo"><div><b>{current.word}</b> <span>{current.phonetic}</span><button onClick={speak}>🔊</button></div><p>{current.example}</p>{current.exampleSourceId&&<a className="exampleSource" href={`https://tatoeba.org/en/sentences/show/${current.exampleSourceId}`} target="_blank" rel="noreferrer">例句来源：Tatoeba #{current.exampleSourceId}{current.exampleSourceUser?` · ${current.exampleSourceUser}`:""} · CC BY 2.0 FR</a>}</div><div className="feedbackActions"><button className={saved.includes(current.word)?"saved":""} onClick={toggleSave}>{saved.includes(current.word)?"★ 已收藏":"☆ 加入收藏"}</button><button className="next" onClick={next}>{index+1>=total?"查看结果":"下一题"} →</button></div></div>}
         </div>
       </section>}
 

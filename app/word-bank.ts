@@ -1,4 +1,4 @@
-export type WordEntry = { word:string; phonetic:string; meaning:string; example?:string; pos?:string };
+export type WordEntry = { word:string; phonetic:string; meaning:string; example?:string; exampleSourceId?:number; exampleSourceUser?:string; pos?:string };
 const make=(rows:string[][]):WordEntry[]=>rows.map(([word,phonetic,meaning,example])=>({word,phonetic,meaning,example}));
 
 export const wordBanks:Record<string,WordEntry[]>={
