@@ -10,7 +10,7 @@ type Question = { word: string; phonetic: string; sentence?: string; options: st
 type WordStats = Record<string, { right: number; wrong: number; lastSeen: number }>;
 
 const letters = ["A", "B", "C", "D"];
-const bankCounts:Record<string,number>={"CET-4":3846,"CET-6":5406,"IELTS":5040,"TOEFL":6974,"TEM-4":6000,"TEM-8":11191,"PTE":4657};
+const bankCounts:Record<string,number>={"CET-4":3263,"CET-6":4919,"IELTS":4352,"PTE":4217,"TEM-4":5151,"TEM-8":10828,"TOEFL":6658};
 const bankCache=new Map<string,WordEntry[]>();
 
 async function loadFullBank(library:string) {
@@ -100,12 +100,12 @@ export default function Home() {
     let bank:WordEntry[];
     try { bank=await loadFullBank(library); setApiStatus(`✓ 已载入 ${bank.length.toLocaleString()} 个词`); }
     catch { bank=wordBanks[library]||wordBanks[library==="TEM-4"?"CET-6":library==="TEM-8"?"TOEFL":"IELTS"]; setApiStatus("完整词库暂时无法载入，已使用精选词库"); }
-    let candidates=[...bank];
+    let candidates=shuffle(bank);
     if(scope==="错题本") candidates=candidates.filter(item=>(wordStats[item.word]?.wrong||0)>0);
     if(scope==="复习词") candidates=candidates.filter(item=>(wordStats[item.word]?.lastSeen||0)>0);
     if(scope==="收藏词") candidates=candidates.filter(item=>saved.includes(item.word));
     if(scope==="新词学习") candidates.sort((a,b)=>(wordStats[a.word]?.lastSeen||0)-(wordStats[b.word]?.lastSeen||0));
-    if(!candidates.length) candidates=[...bank];
+    if(!candidates.length) candidates=shuffle(bank);
     if(mode==="cloze") candidates=candidates.filter(item=>item.example);
     if(!candidates.length) { setGenerating(false); setApiStatus("该词库暂时没有可用的真实例句"); return; }
     if (adaptive) candidates.sort((a,b) => {
