@@ -10,6 +10,18 @@ type Question = { word: string; phonetic: string; sentence?: string; options: st
 type WordStats = Record<string, { right: number; wrong: number; lastSeen: number }>;
 
 const letters = ["A", "B", "C", "D"];
+const bankCounts:Record<string,number>={"CET-4":3846,"CET-6":5406,"IELTS":5040,"TOEFL":6974};
+const bankCache=new Map<string,WordEntry[]>();
+
+async function loadFullBank(library:string) {
+  if(bankCache.has(library)) return bankCache.get(library)!;
+  const base=window.location.hostname.endsWith("github.io")?"/WordLeap":"";
+  const response=await fetch(`${base}/dicts/${library}.json`);
+  if(!response.ok) throw new Error("完整词库载入失败");
+  const entries=await response.json() as WordEntry[];
+  bankCache.set(library,entries);
+  return entries;
+}
 
 function shuffle<T>(items:T[]) {
   const copy=[...items];
@@ -19,11 +31,14 @@ function shuffle<T>(items:T[]) {
 
 function toQuestions(entries:WordEntry[], bank:WordEntry[], mode:Mode):Question[] {
   return entries.map(entry=>{
-    const distractors=shuffle(bank.filter(item=>item.word!==entry.word)).slice(0,3);
+    const category=(entry.pos||"").split(/[\/:]/)[0];
+    const sameType=bank.filter(item=>item.word!==entry.word&&(!category||(item.pos||"").startsWith(category)));
+    const distractors=shuffle(sameType.length>=3?sameType:bank.filter(item=>item.word!==entry.word)).slice(0,3);
     const correct=mode==="meaning"?entry.meaning:entry.word;
     const options=shuffle([correct,...distractors.map(item=>mode==="meaning"?item.meaning:item.word)]);
     const pattern=new RegExp(`\\b${entry.word.replace(/[.*+?^${}()|[\\]\\]/g,"\\$&")}\\b`,"i");
-    return {word:entry.word,phonetic:entry.phonetic,meaning:entry.meaning,sentence:entry.example.replace(pattern,"_____"),options,answer:options.indexOf(correct),example:entry.example};
+    const example=entry.example||((entry.pos||"").startsWith("v")?`In this exercise, you need to _____ correctly.`:(entry.pos||"").startsWith("a")?`The passage describes the result as _____.`:`The article discusses _____ in this section.`);
+    return {word:entry.word,phonetic:entry.phonetic,sentence:entry.example?entry.example.replace(pattern,"_____"):example,options,answer:options.indexOf(correct),example:entry.example||`${entry.word}: ${entry.meaning}`};
   });
 }
 
@@ -81,7 +96,10 @@ export default function Home() {
   const dueToday = useMemo(() => 12 + saved.length, [saved.length]);
 
   async function startQuiz() {
-    const bank=wordBanks[library];
+    setGenerating(true); setApiStatus("正在载入完整词库…");
+    let bank:WordEntry[];
+    try { bank=await loadFullBank(library); setApiStatus(`✓ 已载入 ${bank.length.toLocaleString()} 个词`); }
+    catch { bank=wordBanks[library]; setApiStatus("完整词库暂时无法载入，已使用精选词库"); }
     let candidates=[...bank];
     if(scope==="错题本") candidates=candidates.filter(item=>(wordStats[item.word]?.wrong||0)>0);
     if(scope==="复习词") candidates=candidates.filter(item=>(wordStats[item.word]?.lastSeen||0)>0);
@@ -96,7 +114,7 @@ export default function Home() {
     else candidates=shuffle(candidates);
     let nextSet: Question[] = toQuestions(candidates.slice(0,count),bank,mode);
     if (apiKey.trim()) {
-      setGenerating(true); setApiStatus("AI 正在根据你的学习情况出题…");
+      setApiStatus("AI 正在根据你的学习情况出题…");
       try {
         const payload={library,mode,count:Math.min(count,10),weakWords:Object.entries(wordStats).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)};
         let data;
@@ -105,8 +123,8 @@ export default function Home() {
         if (Array.isArray(data.questions) && data.questions.length) nextSet = [...data.questions,...nextSet.filter(q=>!data.questions.some((ai:Question)=>ai.word===q.word))].slice(0,count);
         setApiStatus("✓ 已生成专属智能题组");
       } catch (error) { setApiStatus(`未能生成新题，已使用内置题组：${error instanceof Error ? error.message : "请检查 Key"}`); }
-      setGenerating(false);
     }
+    setGenerating(false);
     setActiveSet(nextSet);
     setIndex(0); setSelected(null); setCorrect(0); setStreak(0); setMistakes([]); setStage("quiz");
   }
@@ -167,7 +185,7 @@ export default function Home() {
 
         <div className="step"><div className="stepTitle"><span>01</span><div><h2>选择词库</h2><p>你想挑战哪个考试？</p></div></div>
           <div className="libraryGrid">
-            {[["CET-4","英语四级","大学英语基础"],["CET-6","英语六级","进阶核心词汇"],["IELTS","雅思","留学高频词汇"],["TOEFL","托福","学术场景词汇"]].map(([id,name,desc]) => <button key={id} className={`libCard ${library===id?"chosen":""}`} onClick={()=>setLibrary(id)}><span className={`examIcon ${id.toLowerCase()}`}>{id === "IELTS" ? "I" : id === "TOEFL" ? "T" : id.slice(-1)}</span><div><b>{name}</b><small>{desc}</small></div><span className="wordCount">{wordBanks[id].length}<small>内置词</small></span>{library===id&&<i>✓</i>}</button>)}
+            {[["CET-4","英语四级","大学英语基础"],["CET-6","英语六级","进阶核心词汇"],["IELTS","雅思","留学高频词汇"],["TOEFL","托福","学术场景词汇"]].map(([id,name,desc]) => <button key={id} className={`libCard ${library===id?"chosen":""}`} onClick={()=>setLibrary(id)}><span className={`examIcon ${id.toLowerCase()}`}>{id === "IELTS" ? "I" : id === "TOEFL" ? "T" : id.slice(-1)}</span><div><b>{name}</b><small>{desc}</small></div><span className="wordCount">{bankCounts[id].toLocaleString()}<small>完整词库</small></span>{library===id&&<i>✓</i>}</button>)}
           </div>
         </div>
 
