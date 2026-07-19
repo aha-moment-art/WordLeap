@@ -27,6 +27,20 @@ const questions = {
 
 const letters = ["A", "B", "C", "D"];
 
+async function generateOnGitHubPages(provider: Provider, key: string, payload: {library:string;mode:Mode;count:number;weakWords:string[]}) {
+  const prompt = `Create ${payload.count} ${payload.library} English vocabulary multiple-choice questions. Mode: ${payload.mode === "cloze" ? "sentence cloze with four English word options" : "English word with four Chinese meaning options"}. ${payload.weakWords.length ? `Prioritize these weak words: ${payload.weakWords.join(", ")}.` : "Use representative exam vocabulary."} Return valid JSON only as {"questions":[{"word":"","phonetic":"IPA","sentence":"required for cloze only","options":["","","",""],"answer":0,"example":"short natural English example"}]}. answer is zero-based. Exactly four distinct options.`;
+  let response: Response; let content = "";
+  if (provider === "gemini") {
+    response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify({system_instruction:{parts:[{text:"You are an expert vocabulary-test writer. Return accurate JSON only."}]},contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json"}})});
+    const data = await response.json(); if (!response.ok) throw new Error(data.error?.message||"Gemini 请求失败"); content=data.candidates?.[0]?.content?.parts?.[0]?.text||"";
+  } else {
+    const config=provider==="kimi"?{url:"https://api.moonshot.cn/v1/chat/completions",model:"kimi-k3"}:{url:"https://api.deepseek.com/chat/completions",model:"deepseek-v4-flash"};
+    response=await fetch(config.url,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},body:JSON.stringify({model:config.model,temperature:.7,response_format:{type:"json_object"},messages:[{role:"system",content:"You are an expert vocabulary-test writer. Produce accurate, unambiguous questions and valid JSON only."},{role:"user",content:prompt}]})});
+    const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||"AI 请求失败"); content=data.choices?.[0]?.message?.content||"";
+  }
+  return JSON.parse(content.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/, ""));
+}
+
 export default function Home() {
   const [stage, setStage] = useState<Stage>("setup");
   const [mode, setMode] = useState<Mode>("meaning");
@@ -76,9 +90,10 @@ export default function Home() {
     if (apiKey.trim()) {
       setGenerating(true); setApiStatus("AI 正在根据你的学习情况出题…");
       try {
-        const response = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey.trim()}`}, body:JSON.stringify({provider,library,mode,count:Math.min(count,10),weakWords:Object.entries(wordStats).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)}) });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "生成失败");
+        const payload={library,mode,count:Math.min(count,10),weakWords:Object.entries(wordStats).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)};
+        let data;
+        if (window.location.hostname.endsWith("github.io")) data=await generateOnGitHubPages(provider,apiKey.trim(),payload);
+        else { const response = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey.trim()}`}, body:JSON.stringify({provider,...payload}) }); data=await response.json(); if (!response.ok) throw new Error(data.error || "生成失败"); }
         if (Array.isArray(data.questions) && data.questions.length) nextSet = data.questions;
         setApiStatus("✓ 已生成专属智能题组");
       } catch (error) { setApiStatus(`未能生成新题，已使用内置题组：${error instanceof Error ? error.message : "请检查 Key"}`); }
