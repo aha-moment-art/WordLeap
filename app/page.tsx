@@ -3,10 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { wordBanks, type WordEntry } from "./word-bank";
 
-type Mode = "meaning" | "cloze";
 type Stage = "setup" | "quiz" | "result";
 type Provider = "deepseek" | "kimi" | "gemini";
-type Question = { word: string; phonetic: string; sentence?: string; options: string[]; answer: number; example: string; exampleSourceId?: number; exampleSourceUser?: string };
+type Question = { word: string; phonetic: string; options: string[]; answer: number; example: string; exampleSourceId?: number; exampleSourceUser?: string };
 type WordStats = Record<string, { right: number; wrong: number; lastSeen: number }>;
 
 const letters = ["A", "B", "C", "D"];
@@ -29,21 +28,19 @@ function shuffle<T>(items:T[]) {
   return copy;
 }
 
-function toQuestions(entries:WordEntry[], bank:WordEntry[], mode:Mode):Question[] {
+function toQuestions(entries:WordEntry[], bank:WordEntry[]):Question[] {
   return entries.map(entry=>{
     const category=(entry.pos||"").split(/[\/:]/)[0];
     const sameType=bank.filter(item=>item.word!==entry.word&&(!category||(item.pos||"").startsWith(category)));
     const distractors=shuffle(sameType.length>=3?sameType:bank.filter(item=>item.word!==entry.word)).slice(0,3);
-    const correct=mode==="meaning"?entry.meaning:entry.word;
-    const options=shuffle([correct,...distractors.map(item=>mode==="meaning"?item.meaning:item.word)]);
-    const pattern=new RegExp(`\\b${entry.word.replace(/[.*+?^${}()|[\\]\\]/g,"\\$&")}\\b`,"i");
-    const sentence=entry.example?.replace(pattern,"_____");
-    return {word:entry.word,phonetic:entry.phonetic,sentence,options,answer:options.indexOf(correct),example:entry.example||`${entry.word}: ${entry.meaning}`,exampleSourceId:entry.exampleSourceId,exampleSourceUser:entry.exampleSourceUser};
+    const correct=entry.meaning;
+    const options=shuffle([correct,...distractors.map(item=>item.meaning)]);
+    return {word:entry.word,phonetic:entry.phonetic,options,answer:options.indexOf(correct),example:entry.example||`${entry.word}: ${entry.meaning}`,exampleSourceId:entry.exampleSourceId,exampleSourceUser:entry.exampleSourceUser};
   });
 }
 
-async function generateOnGitHubPages(provider: Provider, key: string, payload: {library:string;mode:Mode;count:number;weakWords:string[]}) {
-  const prompt = `Create ${payload.count} ${payload.library} English vocabulary multiple-choice questions. Mode: ${payload.mode === "cloze" ? "sentence cloze with four English word options" : "English word with four Chinese meaning options"}. ${payload.weakWords.length ? `Prioritize these weak words: ${payload.weakWords.join(", ")}.` : "Use representative exam vocabulary."} Return valid JSON only as {"questions":[{"word":"","phonetic":"IPA","sentence":"required for cloze only","options":["","","",""],"answer":0,"example":"short natural English example"}]}. answer is zero-based. Exactly four distinct options.`;
+async function generateOnGitHubPages(provider: Provider, key: string, payload: {library:string;count:number;weakWords:string[]}) {
+  const prompt = `Create ${payload.count} ${payload.library} English vocabulary multiple-choice questions: show one English word with four Chinese meaning options. ${payload.weakWords.length ? `Prioritize these weak words: ${payload.weakWords.join(", ")}.` : "Use representative exam vocabulary."} Return valid JSON only as {"questions":[{"word":"","phonetic":"IPA","options":["","","",""],"answer":0,"example":"short natural English example"}]}. answer is zero-based. Exactly four distinct options.`;
   let response: Response; let content = "";
   if (provider === "gemini") {
     response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify({system_instruction:{parts:[{text:"You are an expert vocabulary-test writer. Return accurate JSON only."}]},contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json"}})});
@@ -58,7 +55,6 @@ async function generateOnGitHubPages(provider: Provider, key: string, payload: {
 
 export default function Home() {
   const [stage, setStage] = useState<Stage>("setup");
-  const [mode, setMode] = useState<Mode>("meaning");
   const [library, setLibrary] = useState("CET-4");
   const [scope, setScope] = useState("新词学习");
   const [count, setCount] = useState(10);
@@ -76,7 +72,7 @@ export default function Home() {
   const [generating, setGenerating] = useState(false);
   const [apiStatus, setApiStatus] = useState("");
   const [wordStats, setWordStats] = useState<WordStats>({});
-  const [activeSet, setActiveSet] = useState<Question[]>(()=>toQuestions(wordBanks["CET-4"].slice(0,10),wordBanks["CET-4"],"meaning"));
+  const [activeSet, setActiveSet] = useState<Question[]>(()=>toQuestions(wordBanks["CET-4"].slice(0,10),wordBanks["CET-4"]));
 
   useEffect(() => {
     try {
@@ -106,26 +102,25 @@ export default function Home() {
     if(scope==="收藏词") candidates=candidates.filter(item=>saved.includes(item.word));
     if(scope==="新词学习") candidates.sort((a,b)=>(wordStats[a.word]?.lastSeen||0)-(wordStats[b.word]?.lastSeen||0));
     if(!candidates.length) candidates=shuffle(bank);
-    if(mode==="cloze") candidates=candidates.filter(item=>item.example);
-    if(!candidates.length) { setGenerating(false); setApiStatus("该词库暂时没有可用的真实例句"); return; }
+    if(!candidates.length) { setGenerating(false); setApiStatus("该词库暂时没有可用单词"); return; }
     if (adaptive) candidates.sort((a,b) => {
       const sa = wordStats[a.word] || {right:0,wrong:0,lastSeen:0};
       const sb = wordStats[b.word] || {right:0,wrong:0,lastSeen:0};
       return (sb.wrong * 3 - sb.right) - (sa.wrong * 3 - sa.right) || sa.lastSeen - sb.lastSeen;
     });
     else candidates=shuffle(candidates);
-    let nextSet: Question[] = toQuestions(candidates.slice(0,count),bank,mode);
-    if (apiKey.trim() && mode!=="cloze") {
+    let nextSet: Question[] = toQuestions(candidates.slice(0,count),bank);
+    if (apiKey.trim()) {
       setApiStatus("AI 正在根据你的学习情况出题…");
       try {
-        const payload={library,mode,count:Math.min(count,10),weakWords:Object.entries(wordStats).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)};
+        const payload={library,count:Math.min(count,10),weakWords:Object.entries(wordStats).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)};
         let data;
         if (window.location.hostname.endsWith("github.io")) data=await generateOnGitHubPages(provider,apiKey.trim(),payload);
         else { const response = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey.trim()}`}, body:JSON.stringify({provider,...payload}) }); data=await response.json(); if (!response.ok) throw new Error(data.error || "生成失败"); }
         if (Array.isArray(data.questions) && data.questions.length) nextSet = [...data.questions,...nextSet.filter(q=>!data.questions.some((ai:Question)=>ai.word===q.word))].slice(0,count);
         setApiStatus("✓ 已生成专属智能题组");
       } catch (error) { setApiStatus(`未能生成新题，已使用内置题组：${error instanceof Error ? error.message : "请检查 Key"}`); }
-    } else if (mode==="cloze") setApiStatus("✓ 使用 Tatoeba 校对例句，已按学习记录自适应选题");
+    }
     setGenerating(false);
     setActiveSet(nextSet);
     setIndex(0); setSelected(null); setCorrect(0); setStreak(0); setMistakes([]); setStage("quiz");
@@ -181,20 +176,13 @@ export default function Home() {
 
       {stage === "setup" && <section className="setup shell">
         <div className="hero">
-          <div><p className="eyebrow">今日学习计划</p><h1>每一个单词，<br/><em>都是向前的一步。</em></h1><p className="sub">选择适合你的词库和练习方式，开始今天的高效记忆。</p></div>
+          <div><p className="eyebrow">今日学习计划</p><h1>每一个单词，<br/><em>都是向前的一步。</em></h1><p className="sub">选择适合你的词库，开始今天的高效记忆。</p></div>
           <div className="todayCard"><div className="ring"><strong>18</strong><small>/ 30</small></div><div><b>今日已学</b><span>继续保持，快完成啦！</span></div><div className="miniStats"><span><b>{dueToday}</b> 待复习</span><span><b>86%</b> 正确率</span></div></div>
         </div>
 
         <div className="step"><div className="stepTitle"><span>01</span><div><h2>选择词库</h2><p>你想挑战哪个考试？</p></div></div>
           <div className="libraryGrid">
             {[["CET-4","英语四级","大学英语基础"],["CET-6","英语六级","进阶核心词汇"],["TEM-4","英语专四","专业阶段核心"],["TEM-8","英语专八","专业阶段进阶"],["IELTS","雅思","留学高频词汇"],["TOEFL","托福","学术场景词汇"],["PTE","PTE","培生学术英语"]].map(([id,name,desc]) => <button key={id} className={`libCard ${library===id?"chosen":""}`} onClick={()=>setLibrary(id)}><span className={`examIcon ${id.toLowerCase()}`}>{id === "IELTS" ? "I" : id === "TOEFL" ? "T" : id === "PTE" ? "P" : id.slice(-1)}</span><div><b>{name}</b><small>{desc}</small></div><span className="wordCount">{bankCounts[id].toLocaleString()}<small>核心词库</small></span>{library===id&&<i>✓</i>}</button>)}
-          </div>
-        </div>
-
-        <div className="step"><div className="stepTitle"><span>02</span><div><h2>选择练习方式</h2><p>用你喜欢的方式巩固记忆</p></div></div>
-          <div className="modeGrid">
-            <button className={`modeCard ${mode==="meaning"?"chosen":""}`} onClick={()=>setMode("meaning")}><span className="modeIcon">译</span><div><b>单词选择释义</b><p>看英文单词，从四个中文释义中选出正确答案。</p><small>适合快速记忆词义</small></div><i>→</i></button>
-            <button className={`modeCard ${mode==="cloze"?"chosen":""}`} onClick={()=>setMode("cloze")}><span className="modeIcon purple">填</span><div><b>句子填空选词</b><p>结合句子语境，从四个单词中选出最佳答案。</p><small>适合掌握实际用法</small></div><i>→</i></button>
           </div>
         </div>
 
@@ -206,14 +194,14 @@ export default function Home() {
       {stage === "quiz" && <section className="quizPage shell">
         <div className="quizTop"><button className="exit" onClick={()=>setStage("setup")}>× <span>退出练习</span></button><div className="progressWrap"><div className="progressMeta"><b>{library} · {scope}</b><span>{index + 1} / {total}</span></div><div className="progress"><i style={{width:`${((index+1)/total)*100}%`}}/></div></div><div className="liveStats"><span>🔥 <b>{streak}</b> 连对</span><span>◎ <b>{index ? accuracy : 100}%</b> 正确率</span></div></div>
         <div className="quizCard">
-          <div className="questionLabel">{mode === "meaning" ? "选择正确的中文释义" : "选择最适合填入空格的单词"}</div>
-          {mode === "meaning" ? <div className="wordDisplay"><h1>{current.word}</h1><button aria-label="播放发音" onClick={speak}>🔊</button></div> : <h2 className="sentence">{current.sentence}</h2>}
+          <div className="questionLabel">选择正确的中文释义</div>
+          <div className="wordDisplay"><h1>{current.word}</h1><button aria-label="播放发音" onClick={speak}>🔊</button></div>
           <div className="options">{current.options.map((option,i)=>{const state=selected===null?"":i===current.answer?"right":i===selected?"wrong":"dim";return <button key={option} className={state} onClick={()=>choose(i)}><span>{letters[i]}</span><b>{option}</b>{selected!==null&&i===current.answer&&<i>✓</i>}{selected===i&&i!==current.answer&&<i>×</i>}</button>})}</div>
           {selected !== null && <div className={`feedback ${selected===current.answer?"success":"error"}`}><div className="feedbackHead"><span>{selected===current.answer?"✓":"×"}</span><div><b>{selected===current.answer?"回答正确！":"再想一想"}</b><small>{selected===current.answer?"做得很好，继续保持。":`正确答案是 ${letters[current.answer]}. ${current.options[current.answer]}`}</small></div></div><div className="wordInfo"><div><b>{current.word}</b> <span>{current.phonetic}</span><button onClick={speak}>🔊</button></div><p>{current.example}</p>{current.exampleSourceId&&<a className="exampleSource" href={`https://tatoeba.org/en/sentences/show/${current.exampleSourceId}`} target="_blank" rel="noreferrer">例句来源：Tatoeba #{current.exampleSourceId}{current.exampleSourceUser?` · ${current.exampleSourceUser}`:""} · CC BY 2.0 FR</a>}</div><div className="feedbackActions"><button className={saved.includes(current.word)?"saved":""} onClick={toggleSave}>{saved.includes(current.word)?"★ 已收藏":"☆ 加入收藏"}</button><button className="next" onClick={next}>{index+1>=total?"查看结果":"下一题"} →</button></div></div>}
         </div>
       </section>}
 
-      {stage === "result" && <section className="result shell"><div className="resultCard"><span className="trophy">★</span><p className="eyebrow">练习完成</p><h1>今天又进步了一点！</h1><p>你完成了 {library} 的一组 {mode === "meaning" ? "词义选择" : "句子填空"} 练习。</p><div className="score"><strong>{Math.round(correct/total*100)}</strong><span>分</span></div><div className="resultStats"><div><b>{correct}</b><span>回答正确</span></div><div><b>{total-correct}</b><span>需要复习</span></div><div><b>{Math.max(streak,correct)}</b><span>最佳连对</span></div></div>{mistakes.length>0&&<div className="weak"><b>薄弱词汇</b><div>{[...new Set(mistakes)].map(w=><span key={w}>{w}</span>)}</div></div>}<div className="resultActions"><button onClick={()=>setStage("setup")}>返回首页</button><button className="start" onClick={startQuiz}>再练一组 →</button></div></div></section>}
+      {stage === "result" && <section className="result shell"><div className="resultCard"><span className="trophy">★</span><p className="eyebrow">练习完成</p><h1>今天又进步了一点！</h1><p>你完成了 {library} 的一组词义选择练习。</p><div className="score"><strong>{Math.round(correct/total*100)}</strong><span>分</span></div><div className="resultStats"><div><b>{correct}</b><span>回答正确</span></div><div><b>{total-correct}</b><span>需要复习</span></div><div><b>{Math.max(streak,correct)}</b><span>最佳连对</span></div></div>{mistakes.length>0&&<div className="weak"><b>薄弱词汇</b><div>{[...new Set(mistakes)].map(w=><span key={w}>{w}</span>)}</div></div>}<div className="resultActions"><button onClick={()=>setStage("setup")}>返回首页</button><button className="start" onClick={startQuiz}>再练一组 →</button></div></div></section>}
       {showApi&&<div className="modalShade" onClick={()=>setShowApi(false)}><div className="apiModal" onClick={e=>e.stopPropagation()}><button className="modalClose" onClick={()=>setShowApi(false)}>×</button><span className="apiSpark">✦</span><h2>连接 AI 智能出题</h2><p>选择你方便使用的服务商，系统会结合词库、题型和薄弱词汇生成专属练习。</p><label>AI 服务商</label><div className="providerGrid"><button className={provider==="deepseek"?"selected":""} onClick={()=>changeProvider("deepseek")}><b>DeepSeek</b><small>国内推荐</small></button><button className={provider==="kimi"?"selected":""} onClick={()=>changeProvider("kimi")}><b>Kimi</b><small>月之暗面</small></button><button className={provider==="gemini"?"selected":""} onClick={()=>changeProvider("gemini")}><b>Gemini</b><small>Google</small></button></div><label>{({deepseek:"DeepSeek",kimi:"Kimi",gemini:"Gemini"}[provider])} API Key</label><input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="请输入对应服务商的 API Key" autoComplete="off"/><small>Key 只发送给你选择的服务商，WordLeap 不会把它写入网站数据库。</small><label className="remember"><input type="checkbox" checked={rememberKey} onChange={e=>setRememberKey(e.target.checked)}/><span>保存在此设备，下次自动使用</span></label><button className="start modalSave" onClick={saveApiSettings}>保存设置</button><button className="clearKey" onClick={()=>{setApiKey("");setRememberKey(false);try{localStorage.removeItem(`wordleap-api-key-${provider}`)}catch{};setApiStatus("")}}>清除当前服务商的 Key</button></div></div>}
       <footer><span>WordLeap · 让每一次练习都算数</span><span>今日目标 30 词 · 已坚持 7 天</span></footer>
     </main>

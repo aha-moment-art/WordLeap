@@ -4,9 +4,9 @@ export async function POST(request: Request) {
   const authorization = request.headers.get("authorization");
   if (!authorization?.startsWith("Bearer ")) return Response.json({error:"请先输入 API Key"},{status:401});
   try {
-    const {provider="deepseek",library,mode,count,weakWords} = await request.json() as {provider:Provider;library:string;mode:string;count:number;weakWords:string[]};
+    const {provider="deepseek",library,count,weakWords} = await request.json() as {provider:Provider;library:string;count:number;weakWords:string[]};
     if (!["deepseek","kimi","gemini"].includes(provider)) return Response.json({error:"不支持的 AI 服务商"},{status:400});
-    const prompt = `Create ${Math.min(Number(count)||5,10)} ${library} English vocabulary multiple-choice questions. Mode: ${mode === "cloze" ? "sentence cloze with four English word options" : "English word with four Chinese meaning options"}. ${weakWords?.length ? `Prioritize these weak words: ${weakWords.join(", ")}.` : "Use representative exam vocabulary."} Return valid JSON only as {"questions":[{"word":"","phonetic":"IPA","sentence":"required for cloze only","options":["","","",""],"answer":0,"example":"short natural English example"}]}. answer is zero-based. Exactly four distinct options.`;
+    const prompt = `Create ${Math.min(Number(count)||5,10)} ${library} English vocabulary multiple-choice questions: show one English word with four Chinese meaning options. ${weakWords?.length ? `Prioritize these weak words: ${weakWords.join(", ")}.` : "Use representative exam vocabulary."} Return valid JSON only as {"questions":[{"word":"","phonetic":"IPA","options":["","","",""],"answer":0,"example":"short natural English example"}]}. answer is zero-based. Exactly four distinct options.`;
     const key = authorization.slice(7); let response: Response; let content = "";
     if (provider === "gemini") {
       response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify({system_instruction:{parts:[{text:"You are an expert vocabulary-test writer. Return accurate JSON only."}]},contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json"}})});
