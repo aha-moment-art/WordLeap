@@ -1,15 +1,57 @@
-:root{--ink:#361a54;--muted:#6f607a;--blue:#12239e;--blue2:#118dff;--lav:#eef6ff;--line:#e7e1eb;--cream:#fbf9fc;--green:#1aab40;--red:#751441;--teal:#10433f;--orange:#e66c37;--pink:#e645ab}
-.logo{background:linear-gradient(145deg,#361a54,#12239e)}
-.navLinks .active,.eyebrow,.hero h1 em{color:#12239e}.navLinks .active:after{background:linear-gradient(90deg,#12239e,#118dff)}
-.day b{color:#e66c37}.avatar{background:#f3eaf5;color:#751441}
-.ring{border-color:#e7f3ff;border-top-color:#118dff;border-right-color:#12239e}
-.examIcon{background:#eaf5ff;color:#118dff}.examIcon.cet-6{background:#e9f8ed;color:#1aab40}.examIcon.tem-4{background:#e6f2f1;color:#10433f}.examIcon.tem-8{background:#f5e8ef;color:#751441}.examIcon.ielts{background:#fff0e9;color:#e66c37}.examIcon.toefl{background:#fff0f9;color:#e645ab}.examIcon.pte{background:#eeefff;color:#12239e}
-.modeIcon{background:#e6f2f1;color:#10433f}.modeIcon.purple{background:#f7eafa;color:#e645ab}
-.start,.feedbackActions .next{background:#12239e;box-shadow:0 8px 18px rgba(18,35,158,.22)}.start:hover,.next:hover{background:#361a54}
-.progress i{background:linear-gradient(90deg,#12239e,#118dff)}
-.options .right{border-color:#1aab40;color:#10433f;background:#f0fbf3}.options .right span{background:#dcf5e2}.feedback.success{background:#f0fbf3;border-color:#cfeeda}.feedbackHead>span{background:#1aab40}
-.options .wrong{border-color:#751441;color:#751441;background:#fff3f8}.options .wrong span{background:#f9dced}.feedback.error{background:#fff3f8;border-color:#f0cada}.error .feedbackHead>span{background:#751441}
-.feedbackActions .saved{color:#e645ab}.trophy{background:#fff0e9;color:#e66c37}.score{border-color:#e7f3ff;color:#12239e}.weak span{background:#f3eaf5;color:#751441}
-.adaptiveBar{background:linear-gradient(110deg,rgba(54,26,84,.07),rgba(17,141,255,.08));border-color:rgba(18,35,158,.18)}.brain{background:linear-gradient(145deg,#361a54,#12239e)}.switch.on{background:#1aab40}
-.apiNav.connected{background:#e9f8ed;color:#10433f;border-color:#bfe5c8}.apiSpark{background:#eaf5ff;color:#118dff}.providerGrid button.selected{border-color:#12239e;background:#eef6ff;color:#12239e;box-shadow:0 0 0 2px rgba(17,141,255,.12)}
-footer{color:#10433f}
+:root{
+  --ink:#E8E8E5;
+  --muted:#BE909E;
+  --blue:#F86694;
+  --blue2:#00348A;
+  --lav:rgba(190,144,158,.16);
+  --line:#848583;
+  --cream:#030000;
+  --green:#F86694;
+  --red:#F86694;
+  --teal:#00348A;
+  --orange:#F86694;
+  --pink:#F86694;
+}
+
+body{background:#030000;color:#E8E8E5}
+.nav,footer{background:rgba(3,0,0,.88);border-color:#848583;backdrop-filter:blur(18px)}
+.logo,.brain{background:linear-gradient(145deg,#F86694,#00348A);box-shadow:0 8px 24px rgba(62,65,62,.55)}
+.navLinks button{color:#BE909E}.navLinks .active,.eyebrow,.hero h1 em{color:#F86694}.navLinks .active:after{background:linear-gradient(90deg,#F86694,#00348A)}
+.badge,.segments{background:rgba(190,144,158,.16)}
+.day{color:#BE909E}.day b{color:#F86694}.avatar{background:rgba(190,144,158,.24);color:#F86694;border:1px solid rgba(232,232,229,.48)}
+
+.todayCard,.libCard,.modeCard,.preferences,.quizCard,.resultCard,.wordInfo{
+  background:linear-gradient(145deg,rgba(190,144,158,.20),rgba(62,65,62,.22));
+  border-color:#848583;
+  box-shadow:inset 0 1px 0 rgba(232,232,229,.34),0 18px 46px rgba(62,65,62,.42);
+  backdrop-filter:blur(20px);
+}
+.libCard:hover,.modeCard:hover{box-shadow:inset 0 1px 0 rgba(232,232,229,.48),0 14px 32px rgba(62,65,62,.58)}
+.libCard.chosen,.modeCard.chosen{border-color:#F86694;background:rgba(248,102,148,.14);box-shadow:0 0 0 3px rgba(248,102,148,.18)}
+.libCard>i{background:#F86694}.ring{border-color:rgba(232,232,229,.18);border-top-color:#F86694;border-right-color:#00348A}
+
+.examIcon,.examIcon.cet-6,.examIcon.tem-4,.examIcon.tem-8,.examIcon.ielts,.examIcon.toefl,.examIcon.pte,
+.modeIcon,.modeIcon.purple,.apiSpark{background:rgba(190,144,158,.18);color:#F86694;border:1px solid rgba(232,232,229,.28)}
+.modeIcon,.examIcon.tem-4{color:#E8E8E5}.examIcon.pte{color:#00348A}
+
+.segments button{color:#BE909E}.segments button.on{background:rgba(232,232,229,.12);color:#F86694;box-shadow:inset 0 1px 0 rgba(232,232,229,.32),0 4px 12px rgba(62,65,62,.42)}
+.start,.feedbackActions .next{background:#F86694;color:#030000;box-shadow:0 8px 22px rgba(248,102,148,.30)}
+.start:hover,.next:hover{background:#00348A;color:#E8E8E5}
+.progress{background:rgba(132,133,131,.30)}.progress i{background:linear-gradient(90deg,#F86694,#00348A)}
+.wordDisplay button,.wordInfo button{background:rgba(190,144,158,.20);color:#F86694;border:1px solid rgba(232,232,229,.28)}
+
+.options button{background:rgba(3,0,0,.48);border-color:#848583;color:#E8E8E5}
+.options button:hover:not(.dim){border-color:#F86694;background:rgba(248,102,148,.10)}
+.options button>span{background:rgba(190,144,158,.18)}
+.options .right,.options .wrong{border-color:#F86694;color:#E8E8E5;background:rgba(248,102,148,.13)}
+.options .right span,.options .wrong span{background:rgba(248,102,148,.22)}
+.feedback.success,.feedback.error{background:rgba(190,144,158,.14);border:1px solid #848583}
+.feedbackHead>span,.error .feedbackHead>span{background:#F86694;color:#030000}
+.feedbackActions .saved,.trophy,.score,.weak span{color:#F86694}
+.trophy,.weak span{background:rgba(190,144,158,.16)}.score{border-color:rgba(232,232,229,.20);border-top-color:#F86694}
+.resultActions>button{background:rgba(190,144,158,.12);border-color:#848583;color:#E8E8E5}.resultActions .start{background:#F86694;color:#030000}
+
+.adaptiveBar{background:linear-gradient(110deg,rgba(190,144,158,.16),rgba(0,52,138,.20));border-color:#848583;box-shadow:inset 0 1px 0 rgba(232,232,229,.28)}
+.switch.on{background:#F86694}.apiNav.connected{background:rgba(190,144,158,.16);color:#F86694;border-color:#848583}
+.providerGrid button{background:rgba(3,0,0,.44);border-color:#848583;color:#E8E8E5}.providerGrid button.selected{border-color:#F86694;background:rgba(248,102,148,.12);color:#F86694;box-shadow:0 0 0 2px rgba(248,102,148,.18)}
+footer{color:#BE909E}
