@@ -3,7 +3,7 @@
 .navLinks .active,.eyebrow,.hero h1 em{color:#12239e}.navLinks .active:after{background:linear-gradient(90deg,#12239e,#118dff)}
 .day b{color:#e66c37}.avatar{background:#f3eaf5;color:#751441}
 .ring{border-color:#e7f3ff;border-top-color:#118dff;border-right-color:#12239e}
-.examIcon{background:#eaf5ff;color:#118dff}.examIcon.cet-6{background:#e9f8ed;color:#1aab40}.examIcon.ielts{background:#fff0e9;color:#e66c37}.examIcon.toefl{background:#fff0f9;color:#e645ab}
+.examIcon{background:#eaf5ff;color:#118dff}.examIcon.cet-6{background:#e9f8ed;color:#1aab40}.examIcon.tem-4{background:#e6f2f1;color:#10433f}.examIcon.tem-8{background:#f5e8ef;color:#751441}.examIcon.ielts{background:#fff0e9;color:#e66c37}.examIcon.toefl{background:#fff0f9;color:#e645ab}.examIcon.pte{background:#eeefff;color:#12239e}
 .modeIcon{background:#e6f2f1;color:#10433f}.modeIcon.purple{background:#f7eafa;color:#e645ab}
 .start,.feedbackActions .next{background:#12239e;box-shadow:0 8px 18px rgba(18,35,158,.22)}.start:hover,.next:hover{background:#361a54}
 .progress i{background:linear-gradient(90deg,#12239e,#118dff)}
