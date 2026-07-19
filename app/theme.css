@@ -54,4 +54,6 @@ body{background:#030000;color:#E8E8E5}
 .adaptiveBar{background:linear-gradient(110deg,rgba(190,144,158,.16),rgba(0,52,138,.20));border-color:#848583;box-shadow:inset 0 1px 0 rgba(232,232,229,.28)}
 .switch.on{background:#F86694}.apiNav.connected{background:rgba(190,144,158,.16);color:#F86694;border-color:#848583}
 .providerGrid button{background:rgba(3,0,0,.44);border-color:#848583;color:#E8E8E5}.providerGrid button.selected{border-color:#F86694;background:rgba(248,102,148,.12);color:#F86694;box-shadow:0 0 0 2px rgba(248,102,148,.18)}
+.apiModal{background:linear-gradient(145deg,rgba(190,144,158,.24),rgba(3,0,0,.96));border:1px solid #848583;color:#E8E8E5;box-shadow:inset 0 1px 0 rgba(232,232,229,.34),0 25px 80px rgba(62,65,62,.65)}
+.apiModal>input{background:rgba(3,0,0,.68);border-color:#848583;color:#E8E8E5}.apiModal>input::placeholder{color:#BE909E}.apiModal>small,.remember,.clearKey,.modalClose{color:#BE909E}
 footer{color:#BE909E}

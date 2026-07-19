@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "./adaptive.css";
 @import "./providers.css";
-@import "./theme.css";
 
 .exampleSource{display:inline-block;margin-top:5px;color:var(--blue);font-size:10px;text-decoration:none}.exampleSource:hover{text-decoration:underline}
 
