@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Mode = "meaning" | "cloze";
 type Stage = "setup" | "quiz" | "result";
+type Question = { word: string; phonetic: string; sentence?: string; options: string[]; answer: number; example: string };
+type WordStats = Record<string, { right: number; wrong: number; lastSeen: number }>;
 
 const questions = {
   meaning: [
@@ -36,22 +38,64 @@ export default function Home() {
   const [streak, setStreak] = useState(0);
   const [mistakes, setMistakes] = useState<string[]>([]);
   const [saved, setSaved] = useState<string[]>([]);
+  const [adaptive, setAdaptive] = useState(true);
+  const [showApi, setShowApi] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [rememberKey, setRememberKey] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [apiStatus, setApiStatus] = useState("");
+  const [wordStats, setWordStats] = useState<WordStats>({});
+  const [activeSet, setActiveSet] = useState<Question[]>(questions.meaning);
 
-  const set = questions[mode];
+  useEffect(() => {
+    try {
+      const stats = localStorage.getItem("wordleap-stats");
+      const key = localStorage.getItem("wordleap-api-key");
+      if (stats) setWordStats(JSON.parse(stats));
+      if (key) { setApiKey(key); setRememberKey(true); }
+    } catch {}
+  }, []);
+
+  const set = activeSet;
   const current = set[index % set.length];
   const total = Math.min(count, 20);
   const accuracy = index === 0 ? 0 : Math.round((correct / index) * 100);
   const dueToday = useMemo(() => 12 + saved.length, [saved.length]);
 
-  function startQuiz() {
+  async function startQuiz() {
+    let nextSet: Question[] = [...questions[mode]];
+    if (adaptive) nextSet.sort((a,b) => {
+      const sa = wordStats[a.word] || {right:0,wrong:0,lastSeen:0};
+      const sb = wordStats[b.word] || {right:0,wrong:0,lastSeen:0};
+      return (sb.wrong * 3 - sb.right) - (sa.wrong * 3 - sa.right) || sa.lastSeen - sb.lastSeen;
+    });
+    if (apiKey.trim()) {
+      setGenerating(true); setApiStatus("AI 正在根据你的学习情况出题…");
+      try {
+        const response = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey.trim()}`}, body:JSON.stringify({library,mode,count:Math.min(count,10),weakWords:Object.entries(wordStats).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)}) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "生成失败");
+        if (Array.isArray(data.questions) && data.questions.length) nextSet = data.questions;
+        setApiStatus("✓ 已生成专属智能题组");
+      } catch (error) { setApiStatus(`未能生成新题，已使用内置题组：${error instanceof Error ? error.message : "请检查 Key"}`); }
+      setGenerating(false);
+    }
+    setActiveSet(nextSet);
     setIndex(0); setSelected(null); setCorrect(0); setStreak(0); setMistakes([]); setStage("quiz");
   }
 
   function choose(option: number) {
     if (selected !== null) return;
     setSelected(option);
-    if (option === current.answer) { setCorrect(v => v + 1); setStreak(v => v + 1); }
+    const isRight = option === current.answer;
+    if (isRight) { setCorrect(v => v + 1); setStreak(v => v + 1); }
     else { setMistakes(v => [...v, current.word]); setStreak(0); }
+    setWordStats(previous => {
+      const old = previous[current.word] || {right:0,wrong:0,lastSeen:0};
+      const updated = {...previous,[current.word]:{right:old.right+(isRight?1:0),wrong:old.wrong+(isRight?0:1),lastSeen:Date.now()}};
+      try { localStorage.setItem("wordleap-stats",JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   }
 
   function next() {
@@ -70,12 +114,17 @@ export default function Home() {
     setSaved(v => v.includes(current.word) ? v.filter(w => w !== current.word) : [...v, current.word]);
   }
 
+  function saveApiSettings() {
+    try { if (rememberKey) localStorage.setItem("wordleap-api-key",apiKey.trim()); else localStorage.removeItem("wordleap-api-key"); } catch {}
+    setApiStatus(apiKey.trim() ? "✓ API Key 已就绪" : ""); setShowApi(false);
+  }
+
   return (
     <main>
       <nav className="nav">
         <button className="brand" onClick={() => setStage("setup")}><span className="logo">W</span><span>WordLeap</span></button>
         <div className="navLinks"><button className="active">练习</button><button>词库</button><button>错题本 <span className="badge">{mistakes.length || 3}</span></button></div>
-        <div className="navRight"><span className="day">🔥 <b>7</b> 天连续学习</span><button className="avatar">YL</button></div>
+        <div className="navRight"><span className="day">🔥 <b>7</b> 天连续学习</span><button className={`apiNav ${apiKey?"connected":""}`} onClick={()=>setShowApi(true)}>✦ AI {apiKey?"已连接":"设置"}</button><button className="avatar">YL</button></div>
       </nav>
 
       {stage === "setup" && <section className="setup shell">
@@ -97,7 +146,9 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="preferences"><div><label>学习范围</label><div className="segments">{["新词学习","复习词","错题本","收藏词"].map(s=><button key={s} onClick={()=>setScope(s)} className={scope===s?"on":""}>{s}</button>)}</div></div><div><label>本组题量</label><div className="segments count">{[5,10,15,20].map(n=><button key={n} onClick={()=>setCount(n)} className={count===n?"on":""}>{n} 题</button>)}</div></div><button className="start" onClick={startQuiz}>开始练习 <span>→</span></button></div>
+        <div className="adaptiveBar"><div><span className="brain">✦</span><div><b>自适应学习</b><p>优先复习易错词，并根据掌握情况动态调整难度。</p></div></div><button className={`switch ${adaptive?"on":""}`} aria-label="切换自适应学习" onClick={()=>setAdaptive(v=>!v)}><i/></button></div>
+        <div className="preferences"><div><label>学习范围</label><div className="segments">{["新词学习","复习词","错题本","收藏词"].map(s=><button key={s} onClick={()=>setScope(s)} className={scope===s?"on":""}>{s}</button>)}</div></div><div><label>本组题量</label><div className="segments count">{[5,10,15,20].map(n=><button key={n} onClick={()=>setCount(n)} className={count===n?"on":""}>{n} 题</button>)}</div></div><button className="start" disabled={generating} onClick={startQuiz}>{generating?"正在生成…":apiKey?"生成智能练习":"开始练习"} <span>→</span></button></div>
+        {apiStatus&&<p className="apiStatus">{apiStatus}</p>}
       </section>}
 
       {stage === "quiz" && <section className="quizPage shell">
@@ -111,6 +162,7 @@ export default function Home() {
       </section>}
 
       {stage === "result" && <section className="result shell"><div className="resultCard"><span className="trophy">★</span><p className="eyebrow">练习完成</p><h1>今天又进步了一点！</h1><p>你完成了 {library} 的一组 {mode === "meaning" ? "词义选择" : "句子填空"} 练习。</p><div className="score"><strong>{Math.round(correct/total*100)}</strong><span>分</span></div><div className="resultStats"><div><b>{correct}</b><span>回答正确</span></div><div><b>{total-correct}</b><span>需要复习</span></div><div><b>{Math.max(streak,correct)}</b><span>最佳连对</span></div></div>{mistakes.length>0&&<div className="weak"><b>薄弱词汇</b><div>{[...new Set(mistakes)].map(w=><span key={w}>{w}</span>)}</div></div>}<div className="resultActions"><button onClick={()=>setStage("setup")}>返回首页</button><button className="start" onClick={startQuiz}>再练一组 →</button></div></div></section>}
+      {showApi&&<div className="modalShade" onClick={()=>setShowApi(false)}><div className="apiModal" onClick={e=>e.stopPropagation()}><button className="modalClose" onClick={()=>setShowApi(false)}>×</button><span className="apiSpark">✦</span><h2>连接 AI 智能出题</h2><p>输入你的 OpenAI API Key，系统会结合词库、题型和薄弱词汇生成专属练习。</p><label>OpenAI API Key</label><input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-..." autoComplete="off"/><small>Key 仅用于向 OpenAI 发起请求，WordLeap 不会把它写入网站数据库。</small><label className="remember"><input type="checkbox" checked={rememberKey} onChange={e=>setRememberKey(e.target.checked)}/><span>保存在此设备，下次自动使用</span></label><button className="start modalSave" onClick={saveApiSettings}>保存设置</button><button className="clearKey" onClick={()=>{setApiKey("");setRememberKey(false);try{localStorage.removeItem("wordleap-api-key")}catch{};setApiStatus("")}}>清除已保存的 Key</button></div></div>}
       <footer><span>WordLeap · 让每一次练习都算数</span><span>今日目标 30 词 · 已坚持 7 天</span></footer>
     </main>
   );
