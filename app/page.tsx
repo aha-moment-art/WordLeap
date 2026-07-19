@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 type Mode = "meaning" | "cloze";
 type Stage = "setup" | "quiz" | "result";
+type Provider = "deepseek" | "kimi" | "gemini";
 type Question = { word: string; phonetic: string; sentence?: string; options: string[]; answer: number; example: string };
 type WordStats = Record<string, { right: number; wrong: number; lastSeen: number }>;
 
@@ -41,6 +42,7 @@ export default function Home() {
   const [adaptive, setAdaptive] = useState(true);
   const [showApi, setShowApi] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  const [provider, setProvider] = useState<Provider>("deepseek");
   const [rememberKey, setRememberKey] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [apiStatus, setApiStatus] = useState("");
@@ -50,8 +52,10 @@ export default function Home() {
   useEffect(() => {
     try {
       const stats = localStorage.getItem("wordleap-stats");
-      const key = localStorage.getItem("wordleap-api-key");
+      const savedProvider = (localStorage.getItem("wordleap-provider") || "deepseek") as Provider;
+      const key = localStorage.getItem(`wordleap-api-key-${savedProvider}`);
       if (stats) setWordStats(JSON.parse(stats));
+      setProvider(savedProvider);
       if (key) { setApiKey(key); setRememberKey(true); }
     } catch {}
   }, []);
@@ -72,7 +76,7 @@ export default function Home() {
     if (apiKey.trim()) {
       setGenerating(true); setApiStatus("AI 正在根据你的学习情况出题…");
       try {
-        const response = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey.trim()}`}, body:JSON.stringify({library,mode,count:Math.min(count,10),weakWords:Object.entries(wordStats).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)}) });
+        const response = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey.trim()}`}, body:JSON.stringify({provider,library,mode,count:Math.min(count,10),weakWords:Object.entries(wordStats).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)}) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "生成失败");
         if (Array.isArray(data.questions) && data.questions.length) nextSet = data.questions;
@@ -115,8 +119,13 @@ export default function Home() {
   }
 
   function saveApiSettings() {
-    try { if (rememberKey) localStorage.setItem("wordleap-api-key",apiKey.trim()); else localStorage.removeItem("wordleap-api-key"); } catch {}
+    try { localStorage.setItem("wordleap-provider",provider); if (rememberKey) localStorage.setItem(`wordleap-api-key-${provider}`,apiKey.trim()); else localStorage.removeItem(`wordleap-api-key-${provider}`); localStorage.removeItem("wordleap-api-key"); } catch {}
     setApiStatus(apiKey.trim() ? "✓ API Key 已就绪" : ""); setShowApi(false);
+  }
+
+  function changeProvider(next: Provider) {
+    setProvider(next);
+    try { const key=localStorage.getItem(`wordleap-api-key-${next}`)||""; setApiKey(key); setRememberKey(Boolean(key)); } catch { setApiKey(""); }
   }
 
   return (
@@ -124,7 +133,7 @@ export default function Home() {
       <nav className="nav">
         <button className="brand" onClick={() => setStage("setup")}><span className="logo">W</span><span>WordLeap</span></button>
         <div className="navLinks"><button className="active">练习</button><button>词库</button><button>错题本 <span className="badge">{mistakes.length || 3}</span></button></div>
-        <div className="navRight"><span className="day">🔥 <b>7</b> 天连续学习</span><button className={`apiNav ${apiKey?"connected":""}`} onClick={()=>setShowApi(true)}>✦ AI {apiKey?"已连接":"设置"}</button><button className="avatar">YL</button></div>
+        <div className="navRight"><span className="day">🔥 <b>7</b> 天连续学习</span><button className={`apiNav ${apiKey?"connected":""}`} onClick={()=>setShowApi(true)}>✦ {apiKey?({deepseek:"DeepSeek",kimi:"Kimi",gemini:"Gemini"}[provider]):"AI 设置"}</button><button className="avatar">YL</button></div>
       </nav>
 
       {stage === "setup" && <section className="setup shell">
@@ -162,7 +171,7 @@ export default function Home() {
       </section>}
 
       {stage === "result" && <section className="result shell"><div className="resultCard"><span className="trophy">★</span><p className="eyebrow">练习完成</p><h1>今天又进步了一点！</h1><p>你完成了 {library} 的一组 {mode === "meaning" ? "词义选择" : "句子填空"} 练习。</p><div className="score"><strong>{Math.round(correct/total*100)}</strong><span>分</span></div><div className="resultStats"><div><b>{correct}</b><span>回答正确</span></div><div><b>{total-correct}</b><span>需要复习</span></div><div><b>{Math.max(streak,correct)}</b><span>最佳连对</span></div></div>{mistakes.length>0&&<div className="weak"><b>薄弱词汇</b><div>{[...new Set(mistakes)].map(w=><span key={w}>{w}</span>)}</div></div>}<div className="resultActions"><button onClick={()=>setStage("setup")}>返回首页</button><button className="start" onClick={startQuiz}>再练一组 →</button></div></div></section>}
-      {showApi&&<div className="modalShade" onClick={()=>setShowApi(false)}><div className="apiModal" onClick={e=>e.stopPropagation()}><button className="modalClose" onClick={()=>setShowApi(false)}>×</button><span className="apiSpark">✦</span><h2>连接 AI 智能出题</h2><p>输入你的 OpenAI API Key，系统会结合词库、题型和薄弱词汇生成专属练习。</p><label>OpenAI API Key</label><input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-..." autoComplete="off"/><small>Key 仅用于向 OpenAI 发起请求，WordLeap 不会把它写入网站数据库。</small><label className="remember"><input type="checkbox" checked={rememberKey} onChange={e=>setRememberKey(e.target.checked)}/><span>保存在此设备，下次自动使用</span></label><button className="start modalSave" onClick={saveApiSettings}>保存设置</button><button className="clearKey" onClick={()=>{setApiKey("");setRememberKey(false);try{localStorage.removeItem("wordleap-api-key")}catch{};setApiStatus("")}}>清除已保存的 Key</button></div></div>}
+      {showApi&&<div className="modalShade" onClick={()=>setShowApi(false)}><div className="apiModal" onClick={e=>e.stopPropagation()}><button className="modalClose" onClick={()=>setShowApi(false)}>×</button><span className="apiSpark">✦</span><h2>连接 AI 智能出题</h2><p>选择你方便使用的服务商，系统会结合词库、题型和薄弱词汇生成专属练习。</p><label>AI 服务商</label><div className="providerGrid"><button className={provider==="deepseek"?"selected":""} onClick={()=>changeProvider("deepseek")}><b>DeepSeek</b><small>国内推荐</small></button><button className={provider==="kimi"?"selected":""} onClick={()=>changeProvider("kimi")}><b>Kimi</b><small>月之暗面</small></button><button className={provider==="gemini"?"selected":""} onClick={()=>changeProvider("gemini")}><b>Gemini</b><small>Google</small></button></div><label>{({deepseek:"DeepSeek",kimi:"Kimi",gemini:"Gemini"}[provider])} API Key</label><input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="请输入对应服务商的 API Key" autoComplete="off"/><small>Key 只发送给你选择的服务商，WordLeap 不会把它写入网站数据库。</small><label className="remember"><input type="checkbox" checked={rememberKey} onChange={e=>setRememberKey(e.target.checked)}/><span>保存在此设备，下次自动使用</span></label><button className="start modalSave" onClick={saveApiSettings}>保存设置</button><button className="clearKey" onClick={()=>{setApiKey("");setRememberKey(false);try{localStorage.removeItem(`wordleap-api-key-${provider}`)}catch{};setApiStatus("")}}>清除当前服务商的 Key</button></div></div>}
       <footer><span>WordLeap · 让每一次练习都算数</span><span>今日目标 30 词 · 已坚持 7 天</span></footer>
     </main>
   );
