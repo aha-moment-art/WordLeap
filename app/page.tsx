@@ -190,6 +190,28 @@ export default function Home() {
     audio.play().catch(fallback);
   }
 
+  function speakExample() {
+    if (typeof window === "undefined") return;
+    audioRef.current?.pause();
+    window.speechSynthesis.cancel();
+    const spokenExample=current.example;
+    const base=window.location.hostname.endsWith("github.io")?"/WordLeap":"";
+    const audio=current.exampleSourceId ? new Audio(`${base}/audio/sentences/${current.exampleSourceId}.mp3`) : null;
+    audioRef.current=audio;
+    let didFallback=false;
+    const fallback=()=>{
+      if(didFallback) return;
+      didFallback=true;
+      const utterance=new SpeechSynthesisUtterance(spokenExample);
+      utterance.lang="en-GB";
+      utterance.rate=0.82;
+      window.speechSynthesis.speak(utterance);
+    };
+    if(!audio) { fallback(); return; }
+    audio.onerror=fallback;
+    audio.play().catch(fallback);
+  }
+
   function toggleSave() {
     setSaved(v => v.includes(current.word) ? v.filter(w => w !== current.word) : [...v, current.word]);
   }
@@ -235,7 +257,7 @@ export default function Home() {
           <div className="questionLabel">选择正确的中文释义</div>
           <div className="wordDisplay"><h1>{current.word}</h1><button aria-label="播放发音" onClick={speak}>🔊</button></div>
           <div className="options">{current.options.map((option,i)=>{const state=selected===null?"":i===current.answer?"right":i===selected?"wrong":"dim";return <button key={option} className={state} onClick={()=>choose(i)}><span>{letters[i]}</span><b>{option}</b>{selected!==null&&i===current.answer&&<i>✓</i>}{selected===i&&i!==current.answer&&<i>×</i>}</button>})}</div>
-          {selected !== null && <div className={`feedback ${selected===current.answer?"success":"error"}`}><div className="feedbackHead"><span>{selected===current.answer?"✓":"×"}</span><div><b>{selected===current.answer?"回答正确！":"再想一想"}</b><small>{selected===current.answer?"做得很好，继续保持。":`正确答案是 ${letters[current.answer]}. ${current.options[current.answer]}`}</small></div></div><div className="wordInfo"><div><b>{current.word}</b> <span>{current.phonetic}</span><button onClick={speak}>🔊</button></div><p>{current.example}</p>{current.exampleSourceId&&<a className="exampleSource" href={`https://tatoeba.org/en/sentences/show/${current.exampleSourceId}`} target="_blank" rel="noreferrer">例句来源：Tatoeba #{current.exampleSourceId}{current.exampleSourceUser?` · ${current.exampleSourceUser}`:""} · CC BY 2.0 FR</a>}</div><div className="feedbackActions"><button className={saved.includes(current.word)?"saved":""} onClick={toggleSave}>{saved.includes(current.word)?"★ 已收藏":"☆ 加入收藏"}</button><button className="next" onClick={next}>{index+1>=total?"查看结果":"下一题"} →</button></div></div>}
+          {selected !== null && <div className={`feedback ${selected===current.answer?"success":"error"}`}><div className="feedbackHead"><span>{selected===current.answer?"✓":"×"}</span><div><b>{selected===current.answer?"回答正确！":"再想一想"}</b><small>{selected===current.answer?"做得很好，继续保持。":`正确答案是 ${letters[current.answer]}. ${current.options[current.answer]}`}</small></div></div><div className="wordInfo"><div><b>{current.word}</b> <span>{current.phonetic}</span><button onClick={speak}>🔊</button></div><div className="exampleLine"><p>{current.example}</p><button aria-label="播放例句" title="播放例句" onClick={speakExample}>🔊</button></div>{current.exampleSourceId&&<a className="exampleSource" href={`https://tatoeba.org/en/sentences/show/${current.exampleSourceId}`} target="_blank" rel="noreferrer">例句来源：Tatoeba #{current.exampleSourceId}{current.exampleSourceUser?` · ${current.exampleSourceUser}`:""} · CC BY 2.0 FR</a>}</div><div className="feedbackActions"><button className={saved.includes(current.word)?"saved":""} onClick={toggleSave}>{saved.includes(current.word)?"★ 已收藏":"☆ 加入收藏"}</button><button className="next" onClick={next}>{index+1>=total?"查看结果":"下一题"} →</button></div></div>}
         </div>
       </section>}
 
