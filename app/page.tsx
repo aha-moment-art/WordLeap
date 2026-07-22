@@ -163,13 +163,16 @@ export default function Home() {
     const base=window.location.hostname.endsWith("github.io")?"/WordLeap":"";
     const audio=new Audio(`${base}/audio/words/${encodeURIComponent(spokenWord)}.mp3`);
     audioRef.current=audio;
+    let didFallback=false;
     const fallback=()=>{
-      if(audioRef.current!==audio) return;
+      if(audioRef.current!==audio || didFallback) return;
+      didFallback=true;
       const utterance=new SpeechSynthesisUtterance(spokenWord);
       utterance.lang="en-GB";
       utterance.rate=0.82;
       window.speechSynthesis.speak(utterance);
     };
+    audio.onerror=fallback;
     audio.play().catch(fallback);
   }
 
