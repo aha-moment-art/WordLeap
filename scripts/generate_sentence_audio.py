@@ -17,6 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DICTS_DIR = ROOT / "public" / "dicts"
+CUSTOM_EXAMPLES_PATH = DICTS_DIR / "custom-examples.json"
 AUDIO_DIR = ROOT / "public" / "audio" / "sentences"
 VOICE_ID = "Xb7hH8MSUJpSbSDYk0k2"
 MODEL_ID = "eleven_flash_v2_5"
@@ -28,16 +29,28 @@ class InvalidAudioResponse(RuntimeError):
     """A paid API response was received but did not contain a usable MP3."""
 
 
-def load_sentences() -> list[tuple[int, str]]:
-    sentences: dict[int, str] = {}
+def load_sentences() -> list[tuple[str, str]]:
+    sentences: dict[str, str] = {}
     for path in sorted(DICTS_DIR.glob("*.json")):
+        if path == CUSTOM_EXAMPLES_PATH:
+            continue
         for entry in json.loads(path.read_text()):
             source_id = entry.get("exampleSourceId")
             example = str(entry.get("example") or "").strip()
             if source_id and example:
-                previous = sentences.setdefault(int(source_id), example)
+                audio_id = str(int(source_id))
+                previous = sentences.setdefault(audio_id, example)
                 if previous != example:
                     raise ValueError(f"Conflicting text for sentence {source_id}")
+    if CUSTOM_EXAMPLES_PATH.exists():
+        for entry in json.loads(CUSTOM_EXAMPLES_PATH.read_text()):
+            audio_id = str(entry["audioId"]).strip()
+            example = str(entry["example"]).strip()
+            if not audio_id or "/" in audio_id or "\x00" in audio_id:
+                raise ValueError(f"Unsafe custom audio ID: {audio_id!r}")
+            previous = sentences.setdefault(audio_id, example)
+            if previous != example:
+                raise ValueError(f"Conflicting text for sentence {audio_id}")
     return sorted(sentences.items())
 
 
@@ -48,7 +61,7 @@ def is_valid_mp3(path: Path) -> bool:
     return head == b"ID3" or head[:2] in {b"\xff\xfb", b"\xff\xf3", b"\xff\xf2", b"\xff\xe3", b"\xff\xe2"}
 
 
-def generate_one(item: tuple[int, str], api_key: str, retries: int, stop: threading.Event) -> tuple[int, str]:
+def generate_one(item: tuple[str, str], api_key: str, retries: int, stop: threading.Event) -> tuple[str, str]:
     source_id, sentence = item
     destination = AUDIO_DIR / f"{source_id}.mp3"
     if is_valid_mp3(destination):
@@ -101,11 +114,12 @@ def main() -> int:
     parser.add_argument("--retries", type=int, default=6)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--source-id", type=int, action="append")
+    parser.add_argument("--audio-id", action="append")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     sentences = load_sentences()
-    if args.source_id:
-        requested = set(args.source_id)
+    if args.source_id or args.audio_id:
+        requested = {str(source_id) for source_id in (args.source_id or [])} | set(args.audio_id or [])
         sentences = [item for item in sentences if item[0] in requested]
         missing = requested - {item[0] for item in sentences}
         if missing:

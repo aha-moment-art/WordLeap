@@ -58,4 +58,5 @@ footer{color:#746F82}
 
 .wordInfo p{font-size:18px;line-height:1.55;margin-top:10px}
 .exampleLine{display:flex;align-items:center;gap:10px}.exampleLine p{flex:1;margin-bottom:6px}.exampleLine button{flex:0 0 auto;width:32px;height:32px}
+.wordInfo .noExample{font-size:14px;color:#9B94A3;font-style:italic}
 .feedbackActions .next::after{content:"空格";display:inline-block;margin-left:7px;padding:2px 7px;border:1px solid rgba(255,255,255,.55);border-radius:5px;font-size:10px;font-weight:600;line-height:1.2}

@@ -2,15 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { wordBanks, type WordEntry } from "./word-bank";
+import customExamples from "../public/dicts/custom-examples.json";
 
 type Stage = "setup" | "quiz" | "result";
 type Provider = "deepseek" | "kimi" | "gemini";
-type Question = { word: string; phonetic: string; options: string[]; answer: number; example: string; exampleSourceId?: number; exampleSourceUser?: string };
+type Question = { word: string; phonetic: string; options: string[]; answer: number; example?: string; exampleAudioId?: string; exampleSourceId?: number; exampleSourceUser?: string };
 type WordStats = Record<string, { right: number; wrong: number; lastSeen: number }>;
 
 const letters = ["A", "B", "C", "D"];
 const bankCounts:Record<string,number>={"CET-4":2525,"CET-6":4112,"IELTS":3649,"PTE":3451,"TEM-4":4158,"TEM-8":9983,"TOEFL":5905};
 const bankCache=new Map<string,WordEntry[]>();
+const customExampleMap=new Map(customExamples.map(item=>[item.word.toLocaleLowerCase(),item]));
 
 async function loadFullBank(library:string) {
   if(bankCache.has(library)) return bankCache.get(library)!;
@@ -35,7 +37,8 @@ function toQuestions(entries:WordEntry[], bank:WordEntry[]):Question[] {
     const distractors=shuffle(sameType.length>=3?sameType:bank.filter(item=>item.word!==entry.word)).slice(0,3);
     const correct=entry.meaning;
     const options=shuffle([correct,...distractors.map(item=>item.meaning)]);
-    return {word:entry.word,phonetic:entry.phonetic,options,answer:options.indexOf(correct),example:entry.example||`${entry.word}: ${entry.meaning}`,exampleSourceId:entry.exampleSourceId,exampleSourceUser:entry.exampleSourceUser};
+    const custom=customExampleMap.get(entry.word.toLocaleLowerCase());
+    return {word:entry.word,phonetic:entry.phonetic,options,answer:options.indexOf(correct),example:entry.example||custom?.example,exampleAudioId:entry.exampleSourceId?String(entry.exampleSourceId):custom?.audioId,exampleSourceId:entry.exampleSourceId,exampleSourceUser:entry.exampleSourceUser};
   });
 }
 
@@ -195,8 +198,9 @@ export default function Home() {
     audioRef.current?.pause();
     window.speechSynthesis.cancel();
     const spokenExample=current.example;
+    if(!spokenExample) return;
     const base=window.location.hostname.endsWith("github.io")?"/WordLeap":"";
-    const audio=current.exampleSourceId ? new Audio(`${base}/audio/sentences/${current.exampleSourceId}.mp3`) : null;
+    const audio=current.exampleAudioId ? new Audio(`${base}/audio/sentences/${current.exampleAudioId}.mp3`) : null;
     audioRef.current=audio;
     let didFallback=false;
     const fallback=()=>{
@@ -257,7 +261,7 @@ export default function Home() {
           <div className="questionLabel">选择正确的中文释义</div>
           <div className="wordDisplay"><h1>{current.word}</h1><button aria-label="播放发音" onClick={speak}>🔊</button></div>
           <div className="options">{current.options.map((option,i)=>{const state=selected===null?"":i===current.answer?"right":i===selected?"wrong":"dim";return <button key={option} className={state} onClick={()=>choose(i)}><span>{letters[i]}</span><b>{option}</b>{selected!==null&&i===current.answer&&<i>✓</i>}{selected===i&&i!==current.answer&&<i>×</i>}</button>})}</div>
-          {selected !== null && <div className={`feedback ${selected===current.answer?"success":"error"}`}><div className="feedbackHead"><span>{selected===current.answer?"✓":"×"}</span><div><b>{selected===current.answer?"回答正确！":"再想一想"}</b><small>{selected===current.answer?"做得很好，继续保持。":`正确答案是 ${letters[current.answer]}. ${current.options[current.answer]}`}</small></div></div><div className="wordInfo"><div><b>{current.word}</b> <span>{current.phonetic}</span><button onClick={speak}>🔊</button></div><div className="exampleLine"><p>{current.example}</p><button aria-label="播放例句" title="播放例句" onClick={speakExample}>🔊</button></div>{current.exampleSourceId&&<a className="exampleSource" href={`https://tatoeba.org/en/sentences/show/${current.exampleSourceId}`} target="_blank" rel="noreferrer">例句来源：Tatoeba #{current.exampleSourceId}{current.exampleSourceUser?` · ${current.exampleSourceUser}`:""} · CC BY 2.0 FR</a>}</div><div className="feedbackActions"><button className={saved.includes(current.word)?"saved":""} onClick={toggleSave}>{saved.includes(current.word)?"★ 已收藏":"☆ 加入收藏"}</button><button className="next" onClick={next}>{index+1>=total?"查看结果":"下一题"} →</button></div></div>}
+          {selected !== null && <div className={`feedback ${selected===current.answer?"success":"error"}`}><div className="feedbackHead"><span>{selected===current.answer?"✓":"×"}</span><div><b>{selected===current.answer?"回答正确！":"再想一想"}</b><small>{selected===current.answer?"做得很好，继续保持。":`正确答案是 ${letters[current.answer]}. ${current.options[current.answer]}`}</small></div></div><div className="wordInfo"><div><b>{current.word}</b> <span>{current.phonetic}</span><button onClick={speak}>🔊</button></div>{current.example?<><div className="exampleLine"><p>{current.example}</p><button aria-label="播放例句" title="播放例句" onClick={speakExample}>🔊</button></div>{current.exampleSourceId&&<a className="exampleSource" href={`https://tatoeba.org/en/sentences/show/${current.exampleSourceId}`} target="_blank" rel="noreferrer">例句来源：Tatoeba #{current.exampleSourceId}{current.exampleSourceUser?` · ${current.exampleSourceUser}`:""} · CC BY 2.0 FR</a>}</>:<p className="noExample">暂无可用例句</p>}</div><div className="feedbackActions"><button className={saved.includes(current.word)?"saved":""} onClick={toggleSave}>{saved.includes(current.word)?"★ 已收藏":"☆ 加入收藏"}</button><button className="next" onClick={next}>{index+1>=total?"查看结果":"下一题"} →</button></div></div>}
         </div>
       </section>}
 

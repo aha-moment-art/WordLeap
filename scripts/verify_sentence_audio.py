@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DICTS_DIR = ROOT / "public" / "dicts"
+CUSTOM_EXAMPLES_PATH = DICTS_DIR / "custom-examples.json"
 AUDIO_DIR = ROOT / "public" / "audio" / "sentences"
 
 
@@ -21,7 +22,7 @@ def is_mp3(path: Path) -> bool:
     return head == b"ID3" or head[:2] in {b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"}
 
 
-def decodes(source_id: int) -> bool:
+def decodes(source_id: str) -> bool:
     result = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(AUDIO_DIR / f"{source_id}.mp3")],
         capture_output=True,
@@ -31,17 +32,26 @@ def decodes(source_id: int) -> bool:
 
 
 def main() -> int:
-    expected: dict[int, str] = {}
+    expected: dict[str, str] = {}
     for path in sorted(DICTS_DIR.glob("*.json")):
+        if path == CUSTOM_EXAMPLES_PATH:
+            continue
         for entry in json.loads(path.read_text()):
             source_id = entry.get("exampleSourceId")
             example = str(entry.get("example") or "").strip()
             if source_id and example:
-                numeric_id = int(source_id)
-                previous = expected.setdefault(numeric_id, example)
+                audio_id = str(int(source_id))
+                previous = expected.setdefault(audio_id, example)
                 if previous != example:
-                    raise ValueError(f"Conflicting text for sentence {numeric_id}")
-    actual = {int(path.stem) for path in AUDIO_DIR.glob("*.mp3") if path.stem.isdigit()}
+                    raise ValueError(f"Conflicting text for sentence {audio_id}")
+    if CUSTOM_EXAMPLES_PATH.exists():
+        for entry in json.loads(CUSTOM_EXAMPLES_PATH.read_text()):
+            audio_id = str(entry["audioId"]).strip()
+            example = str(entry["example"]).strip()
+            previous = expected.setdefault(audio_id, example)
+            if previous != example:
+                raise ValueError(f"Conflicting text for sentence {audio_id}")
+    actual = {path.stem for path in AUDIO_DIR.glob("*.mp3")}
     missing = sorted(set(expected) - actual)
     extra = sorted(actual - set(expected))
     invalid = sorted(source_id for source_id in set(expected) & actual if not is_mp3(AUDIO_DIR / f"{source_id}.mp3"))
