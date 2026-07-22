@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { wordBanks, type WordEntry } from "./word-bank";
 
 type Stage = "setup" | "quiz" | "result";
@@ -9,7 +9,7 @@ type Question = { word: string; phonetic: string; options: string[]; answer: num
 type WordStats = Record<string, { right: number; wrong: number; lastSeen: number }>;
 
 const letters = ["A", "B", "C", "D"];
-const bankCounts:Record<string,number>={"CET-4":3263,"CET-6":4919,"IELTS":4352,"PTE":4217,"TEM-4":5151,"TEM-8":10828,"TOEFL":6658};
+const bankCounts:Record<string,number>={"CET-4":2525,"CET-6":4112,"IELTS":3649,"PTE":3451,"TEM-4":4158,"TEM-8":9983,"TOEFL":5905};
 const bankCache=new Map<string,WordEntry[]>();
 
 async function loadFullBank(library:string) {
@@ -72,6 +72,7 @@ export default function Home() {
   const [generating, setGenerating] = useState(false);
   const [apiStatus, setApiStatus] = useState("");
   const [wordStats, setWordStats] = useState<WordStats>({});
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [activeSet, setActiveSet] = useState<Question[]>(()=>toQuestions(wordBanks["CET-4"].slice(0,10),wordBanks["CET-4"]));
 
   useEffect(() => {
@@ -90,6 +91,11 @@ export default function Home() {
   const total = Math.min(count, 20);
   const accuracy = index === 0 ? 0 : Math.round((correct / index) * 100);
   const dueToday = useMemo(() => 12 + saved.length, [saved.length]);
+
+  useEffect(() => {
+    if (stage === "quiz") speak();
+    return () => { audioRef.current?.pause(); };
+  }, [stage, index, current.word]);
 
   async function startQuiz() {
     setGenerating(true); setApiStatus("正在载入完整词库…");
@@ -113,11 +119,15 @@ export default function Home() {
     if (apiKey.trim()) {
       setApiStatus("AI 正在根据你的学习情况出题…");
       try {
-        const payload={library,count:Math.min(count,10),weakWords:Object.entries(wordStats).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)};
+        const allowedWords=new Set(bank.map(item=>item.word.trim().toLocaleLowerCase()));
+        const payload={library,count:Math.min(count,10),weakWords:Object.entries(wordStats).filter(([word])=>allowedWords.has(word.trim().toLocaleLowerCase())).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)};
         let data;
         if (window.location.hostname.endsWith("github.io")) data=await generateOnGitHubPages(provider,apiKey.trim(),payload);
         else { const response = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey.trim()}`}, body:JSON.stringify({provider,...payload}) }); data=await response.json(); if (!response.ok) throw new Error(data.error || "生成失败"); }
-        if (Array.isArray(data.questions) && data.questions.length) nextSet = [...data.questions,...nextSet.filter(q=>!data.questions.some((ai:Question)=>ai.word===q.word))].slice(0,count);
+        if (Array.isArray(data.questions) && data.questions.length) {
+          const approvedQuestions=(data.questions as Question[]).filter(question=>allowedWords.has(question.word.trim().toLocaleLowerCase()));
+          nextSet = [...approvedQuestions,...nextSet.filter(q=>!approvedQuestions.some(ai=>ai.word===q.word))].slice(0,count);
+        }
         setApiStatus("✓ 已生成专属智能题组");
       } catch (error) { setApiStatus(`未能生成新题，已使用内置题组：${error instanceof Error ? error.message : "请检查 Key"}`); }
     }
@@ -147,9 +157,20 @@ export default function Home() {
 
   function speak() {
     if (typeof window === "undefined") return;
+    audioRef.current?.pause();
     window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(current.word); u.lang = "en-GB"; u.rate = 0.82;
-    window.speechSynthesis.speak(u);
+    const spokenWord=current.word;
+    const base=window.location.hostname.endsWith("github.io")?"/WordLeap":"";
+    const audio=new Audio(`${base}/audio/words/${encodeURIComponent(spokenWord)}.mp3`);
+    audioRef.current=audio;
+    const fallback=()=>{
+      if(audioRef.current!==audio) return;
+      const utterance=new SpeechSynthesisUtterance(spokenWord);
+      utterance.lang="en-GB";
+      utterance.rate=0.82;
+      window.speechSynthesis.speak(utterance);
+    };
+    audio.play().catch(fallback);
   }
 
   function toggleSave() {
