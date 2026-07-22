@@ -200,7 +200,7 @@ export default function Home() {
     audioRef.current=audio;
     let didFallback=false;
     const fallback=()=>{
-      if(didFallback) return;
+      if(audioRef.current!==audio || didFallback) return;
       didFallback=true;
       const utterance=new SpeechSynthesisUtterance(spokenExample);
       utterance.lang="en-GB";

@@ -37,7 +37,10 @@ def main() -> int:
             source_id = entry.get("exampleSourceId")
             example = str(entry.get("example") or "").strip()
             if source_id and example:
-                expected[int(source_id)] = example
+                numeric_id = int(source_id)
+                previous = expected.setdefault(numeric_id, example)
+                if previous != example:
+                    raise ValueError(f"Conflicting text for sentence {numeric_id}")
     actual = {int(path.stem) for path in AUDIO_DIR.glob("*.mp3") if path.stem.isdigit()}
     missing = sorted(set(expected) - actual)
     extra = sorted(actual - set(expected))

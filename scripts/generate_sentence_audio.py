@@ -24,6 +24,10 @@ OUTPUT_FORMAT = "mp3_22050_32"
 API_URL = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}?output_format={OUTPUT_FORMAT}"
 
 
+class InvalidAudioResponse(RuntimeError):
+    """A paid API response was received but did not contain a usable MP3."""
+
+
 def load_sentences() -> list[tuple[int, str]]:
     sentences: dict[int, str] = {}
     for path in sorted(DICTS_DIR.glob("*.json")):
@@ -41,7 +45,7 @@ def is_valid_mp3(path: Path) -> bool:
     if not path.is_file() or path.stat().st_size < 500:
         return False
     head = path.read_bytes()[:3]
-    return head == b"ID3" or head[:2] in {b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"}
+    return head == b"ID3" or head[:2] in {b"\xff\xfb", b"\xff\xf3", b"\xff\xf2", b"\xff\xe3", b"\xff\xe2"}
 
 
 def generate_one(item: tuple[int, str], api_key: str, retries: int, stop: threading.Event) -> tuple[int, str]:
@@ -72,9 +76,11 @@ def generate_one(item: tuple[int, str], api_key: str, retries: int, stop: thread
             temp.write_bytes(audio)
             if not is_valid_mp3(temp):
                 temp.unlink(missing_ok=True)
-                raise RuntimeError("invalid MP3 response")
+                raise InvalidAudioResponse("invalid MP3 response")
             temp.replace(destination)
             return source_id, "generated"
+        except InvalidAudioResponse as error:
+            return source_id, f"error: {error}"
         except urllib.error.HTTPError as error:
             body = error.read().decode("utf-8", "replace")[:500]
             if error.code in {401, 402, 403} or "insufficient" in body.lower():
@@ -82,7 +88,7 @@ def generate_one(item: tuple[int, str], api_key: str, retries: int, stop: thread
                 return source_id, f"fatal HTTP {error.code}"
             if error.code not in {408, 409, 429, 500, 502, 503, 504} or attempt >= retries:
                 return source_id, f"HTTP {error.code}"
-        except (OSError, RuntimeError) as error:
+        except OSError as error:
             if attempt >= retries:
                 return source_id, f"error: {error}"
         time.sleep(min(32, 2**attempt) + random.random())
