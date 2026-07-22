@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { wordBanks, type WordEntry } from "./word-bank";
 import customExamples from "../public/dicts/custom-examples.json";
 
@@ -8,6 +8,7 @@ type Stage = "setup" | "quiz" | "result";
 type Provider = "deepseek" | "kimi" | "gemini";
 type Question = { word: string; phonetic: string; options: string[]; answer: number; example?: string; exampleAudioId?: string; exampleSourceId?: number; exampleSourceUser?: string };
 type WordStats = Record<string, { right: number; wrong: number; lastSeen: number }>;
+type GeneratedQuestionResponse = { questions?: Question[]; error?: string };
 
 const letters = ["A", "B", "C", "D"];
 const bankCounts:Record<string,number>={"CET-4":2525,"CET-6":4112,"IELTS":3649,"PTE":3451,"TEM-4":4158,"TEM-8":9983,"TOEFL":5905};
@@ -47,13 +48,13 @@ async function generateOnGitHubPages(provider: Provider, key: string, payload: {
   let response: Response; let content = "";
   if (provider === "gemini") {
     response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify({system_instruction:{parts:[{text:"You are an expert vocabulary-test writer. Return accurate JSON only."}]},contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json"}})});
-    const data = await response.json(); if (!response.ok) throw new Error(data.error?.message||"Gemini 请求失败"); content=data.candidates?.[0]?.content?.parts?.[0]?.text||"";
+    const data = await response.json() as { error?: { message?: string }; candidates?: { content?: { parts?: { text?: string }[] } }[] }; if (!response.ok) throw new Error(data.error?.message||"Gemini 请求失败"); content=data.candidates?.[0]?.content?.parts?.[0]?.text||"";
   } else {
     const config=provider==="kimi"?{url:"https://api.moonshot.cn/v1/chat/completions",model:"kimi-k3"}:{url:"https://api.deepseek.com/chat/completions",model:"deepseek-v4-flash"};
     response=await fetch(config.url,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},body:JSON.stringify({model:config.model,temperature:.7,response_format:{type:"json_object"},messages:[{role:"system",content:"You are an expert vocabulary-test writer. Produce accurate, unambiguous questions and valid JSON only."},{role:"user",content:prompt}]})});
-    const data=await response.json(); if(!response.ok) throw new Error(data.error?.message||"AI 请求失败"); content=data.choices?.[0]?.message?.content||"";
+    const data=await response.json() as { error?: { message?: string }; choices?: { message?: { content?: string } }[] }; if(!response.ok) throw new Error(data.error?.message||"AI 请求失败"); content=data.choices?.[0]?.message?.content||"";
   }
-  return JSON.parse(content.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/, ""));
+  return JSON.parse(content.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/, "")) as GeneratedQuestionResponse;
 }
 
 export default function Home() {
@@ -79,14 +80,17 @@ export default function Home() {
   const [activeSet, setActiveSet] = useState<Question[]>(()=>toQuestions(wordBanks["CET-4"].slice(0,10),wordBanks["CET-4"]));
 
   useEffect(() => {
-    try {
-      const stats = localStorage.getItem("wordleap-stats");
-      const savedProvider = (localStorage.getItem("wordleap-provider") || "deepseek") as Provider;
-      const key = localStorage.getItem(`wordleap-api-key-${savedProvider}`);
-      if (stats) setWordStats(JSON.parse(stats));
-      setProvider(savedProvider);
-      if (key) { setApiKey(key); setRememberKey(true); }
-    } catch {}
+    const timer = window.setTimeout(() => {
+      try {
+        const stats = localStorage.getItem("wordleap-stats");
+        const savedProvider = (localStorage.getItem("wordleap-provider") || "deepseek") as Provider;
+        const key = localStorage.getItem(`wordleap-api-key-${savedProvider}`);
+        if (stats) setWordStats(JSON.parse(stats));
+        setProvider(savedProvider);
+        if (key) { setApiKey(key); setRememberKey(true); }
+      } catch {}
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const set = activeSet;
@@ -95,16 +99,37 @@ export default function Home() {
   const accuracy = index === 0 ? 0 : Math.round((correct / index) * 100);
   const dueToday = useMemo(() => 12 + saved.length, [saved.length]);
 
+  const speak = useCallback(() => {
+    if (typeof window === "undefined") return;
+    audioRef.current?.pause();
+    window.speechSynthesis.cancel();
+    const spokenWord=current.word;
+    const base=window.location.hostname.endsWith("github.io")?"/WordLeap":"";
+    const audio=new Audio(`${base}/audio/words/${encodeURIComponent(spokenWord)}.mp3`);
+    audioRef.current=audio;
+    let didFallback=false;
+    const fallback=()=>{
+      if(audioRef.current!==audio || didFallback) return;
+      didFallback=true;
+      const utterance=new SpeechSynthesisUtterance(spokenWord);
+      utterance.lang="en-GB";
+      utterance.rate=0.82;
+      window.speechSynthesis.speak(utterance);
+    };
+    audio.onerror=fallback;
+    audio.play().catch(fallback);
+  }, [current.word]);
+
   useEffect(() => {
     if (stage === "quiz") speak();
     return () => { audioRef.current?.pause(); };
-  }, [stage, index, current.word]);
+  }, [stage, speak]);
 
   useEffect(() => {
     function handleNextShortcut(event: KeyboardEvent) {
       if (event.code !== "Space" || event.repeat || stage !== "quiz" || selected === null || showApi) return;
       const target = event.target as HTMLElement | null;
-      if (target?.isContentEditable || target?.closest("input, textarea, select")) return;
+      if (target?.isContentEditable || target?.closest("input, textarea, select, button, a, [role='button']")) return;
       event.preventDefault();
       if (index + 1 >= total) setStage("result");
       else { setIndex(value => value + 1); setSelected(null); }
@@ -138,9 +163,9 @@ export default function Home() {
       try {
         const allowedWords=new Set(bank.map(item=>item.word.trim().toLocaleLowerCase()));
         const payload={library,count:Math.min(count,10),weakWords:Object.entries(wordStats).filter(([word])=>allowedWords.has(word.trim().toLocaleLowerCase())).sort((a,b)=>b[1].wrong-a[1].wrong).slice(0,8).map(([w])=>w)};
-        let data;
+        let data: GeneratedQuestionResponse;
         if (window.location.hostname.endsWith("github.io")) data=await generateOnGitHubPages(provider,apiKey.trim(),payload);
-        else { const response = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey.trim()}`}, body:JSON.stringify({provider,...payload}) }); data=await response.json(); if (!response.ok) throw new Error(data.error || "生成失败"); }
+        else { const response = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey.trim()}`}, body:JSON.stringify({provider,...payload}) }); data=await response.json() as GeneratedQuestionResponse; if (!response.ok) throw new Error(data.error || "生成失败"); }
         if (Array.isArray(data.questions) && data.questions.length) {
           const approvedQuestions=(data.questions as Question[]).filter(question=>allowedWords.has(question.word.trim().toLocaleLowerCase()));
           nextSet = [...approvedQuestions,...nextSet.filter(q=>!approvedQuestions.some(ai=>ai.word===q.word))].slice(0,count);
@@ -170,27 +195,6 @@ export default function Home() {
   function next() {
     if (index + 1 >= total) setStage("result");
     else { setIndex(v => v + 1); setSelected(null); }
-  }
-
-  function speak() {
-    if (typeof window === "undefined") return;
-    audioRef.current?.pause();
-    window.speechSynthesis.cancel();
-    const spokenWord=current.word;
-    const base=window.location.hostname.endsWith("github.io")?"/WordLeap":"";
-    const audio=new Audio(`${base}/audio/words/${encodeURIComponent(spokenWord)}.mp3`);
-    audioRef.current=audio;
-    let didFallback=false;
-    const fallback=()=>{
-      if(audioRef.current!==audio || didFallback) return;
-      didFallback=true;
-      const utterance=new SpeechSynthesisUtterance(spokenWord);
-      utterance.lang="en-GB";
-      utterance.rate=0.82;
-      window.speechSynthesis.speak(utterance);
-    };
-    audio.onerror=fallback;
-    audio.play().catch(fallback);
   }
 
   function speakExample() {

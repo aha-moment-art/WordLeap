@@ -38,8 +38,8 @@ export const metadata: Metadata = {
     images: ["https://aha-moment-art.github.io/WordLeap/og.png"],
   },
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/WordLeap/favicon.svg",
+    shortcut: "/WordLeap/favicon.svg",
   },
 };
 
