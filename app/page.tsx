@@ -97,6 +97,20 @@ export default function Home() {
     return () => { audioRef.current?.pause(); };
   }, [stage, index, current.word]);
 
+  useEffect(() => {
+    function handleNextShortcut(event: KeyboardEvent) {
+      if (event.code !== "Space" || event.repeat || stage !== "quiz" || selected === null || showApi) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.isContentEditable || target?.closest("input, textarea, select")) return;
+      event.preventDefault();
+      if (index + 1 >= total) setStage("result");
+      else { setIndex(value => value + 1); setSelected(null); }
+    }
+
+    window.addEventListener("keydown", handleNextShortcut);
+    return () => window.removeEventListener("keydown", handleNextShortcut);
+  }, [stage, selected, showApi, index, total]);
+
   async function startQuiz() {
     setGenerating(true); setApiStatus("正在载入完整词库…");
     let bank:WordEntry[];
