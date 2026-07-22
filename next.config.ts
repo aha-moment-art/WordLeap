@@ -8,7 +8,6 @@ const nextConfig: NextConfig = {
     basePath: "/WordLeap",
     assetPrefix: "/WordLeap/",
     trailingSlash: true,
-    typescript: { ignoreBuildErrors: true },
   } : {}),
 };
 

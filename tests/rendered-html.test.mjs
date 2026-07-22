@@ -36,8 +36,12 @@ test("keeps examples, static audio, and keyboard safeguards wired", async () => 
 
   assert.match(page, /custom-examples\.json/);
   assert.match(page, /audio\/sentences\/\$\{current\.exampleAudioId\}\.mp3/);
-  assert.match(page, /input, textarea, select, button, a, \[role='button'\]/);
+  assert.match(page, /classList\.contains\("answerOption"\)/);
   assert.match(page, /event\.code !== "Space"/);
+  assert.match(page, /answeredCount = index \+ \(selected === null \? 0 : 1\)/);
+  assert.match(page, /seenMeanings=new Set\(\[correct\]\)/);
+  assert.match(page, /role="dialog" aria-modal="true"/);
+  assert.match(page, /aria-labelledby="api-dialog-title"/);
   assert.match(layout, /title:\s*"WordLeap - 四六级雅思托福背单词"/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await assert.rejects(access(new URL("../app/_sites-preview", import.meta.url)));
